@@ -84,6 +84,14 @@ func main() {
 	// Good practice to call Flush and Close even for sync loggers
 	syncLogger.Flush()
 	syncLogger.Close()
+
+	// Console logging example
+	consoleClient := &consoleClient{}
+	consoleLogger := cloudlog.New(consoleClient,
+		cloudlog.WithJob("console-example"),
+		cloudlog.WithFormatter(formatter.NewStringFormatter()),
+	)
+	consoleLogger.Info("Logging to console", "example", true)
 }
 
 // getEnvOrDefault gets environment variable or returns default if not set

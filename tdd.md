@@ -218,6 +218,16 @@ The `Logger` is a core component responsible for structured logging in the appli
 - **Description**: Verify that the `Log` method returns an error if the `Client` fails to send the log payload.
 - **Expected Outcome**: The `Log` method returns the client error.
 
+### 9. Buffer Overflow Handling
+
+- **Description**: Verify that the logger handles buffer overflow errors gracefully.
+- **Expected Outcome**: The logger returns a buffer full error when the queue is full.
+
+### 10. Graceful Shutdown
+
+- **Description**: Verify that all logs are flushed and resources are cleaned up during shutdown.
+- **Expected Outcome**: No logs are lost, and all resources are properly released.
+
 ---
 
 ## Tools and Frameworks

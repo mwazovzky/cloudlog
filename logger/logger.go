@@ -49,6 +49,16 @@ func New(client client.LogSender, options ...Option) *Logger {
 	return NewWithDeliverer(deliverer, options...)
 }
 
+// NewAsync creates a new Logger with asynchronous delivery
+func NewAsync(client client.LogSender, config delivery.Config, options ...Option) *Logger {
+	// Ensure async is set to true
+	config.Async = true
+
+	// Create an async deliverer
+	deliverer := delivery.NewAsyncDeliverer(client, config)
+	return NewWithDeliverer(deliverer, options...)
+}
+
 // NewWithDeliverer creates a new Logger with a specific deliverer
 func NewWithDeliverer(deliverer delivery.LogDeliverer, options ...Option) *Logger {
 	logger := &Logger{
