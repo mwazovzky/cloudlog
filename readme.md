@@ -137,6 +137,24 @@ func TestFunction(t *testing.T) {
 }
 ```
 
+### Asynchronous and Batch Logging
+
+```go
+// Asynchronous logging
+asyncLogger := cloudlog.NewAsync(client, cloudlog.WithJob("async-logger"))
+asyncLogger.Info("Async log message")
+
+// Batch logging
+batchConfig := cloudlog.DefaultDeliveryConfig()
+batchConfig.BatchSize = 3
+batchLogger := cloudlog.NewBatchLoggerWithConfig(client, batchConfig)
+batchLogger.Info("Batch log message")
+
+// Ensure logs are flushed before shutdown
+asyncLogger.Flush()
+batchLogger.Flush()
+```
+
 ## Examples
 
 For complete examples, see the [examples directory](./examples).

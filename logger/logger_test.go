@@ -334,3 +334,82 @@ func TestWithJobAdditionalCases(t *testing.T) {
 	assert.Equal(t, 1, len(logs))
 	assert.True(t, testClient.ContainsEntry("info", "Test with special job name"))
 }
+
+// TestBackwardCompatibility verifies the logger works the same way with delivery layer
+func TestBackwardCompatibility(t *testing.T) {
+	mockClient := &MockClient{}
+	logger := New(mockClient) // Using the updated New that wraps with SyncDeliverer
+
+	// Test the basic functionality
+	err := logger.Info("Test message", "key1", "value1")
+
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+
+	if mockClient.LastJob != "application" {
+		t.Errorf("Expected job 'application', got: %s", mockClient.LastJob)
+	}
+
+	// Verify the message format hasn't changed
+	var parsed map[string]interface{}
+	err = json.Unmarshal(mockClient.LastFormatted, &parsed)
+	if err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	if parsed["level"] != "info" {
+		t.Errorf("Expected level 'info', got: %v", parsed["level"])
+	}
+
+	if parsed["message"] != "Test message" {
+		t.Errorf("Expected message 'Test message', got: %v", parsed["message"])
+	}
+
+	if parsed["key1"] != "value1" {
+		t.Errorf("Expected key1 'value1', got: %v", parsed["key1"])
+	}
+}
+
+// TestErrorPropagation tests that client errors are still propagated correctly
+func TestErrorPropagation(t *testing.T) {
+	mockClient := &MockClient{ShouldError: true}
+	logger := New(mockClient)
+
+	err := logger.Info("Test message")
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+}
+
+// TestWithCustomFormatter verifies formatter options still work
+func TestWithCustomFormatter(t *testing.T) {
+	mockClient := &MockClient{}
+	stringFormatter := formatter.NewStringFormatter()
+	logger := New(mockClient, WithFormatter(stringFormatter))
+
+	err := logger.Info("Test message", "key1", "value1")
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+
+	// String formatter produces output like "timestamp=2023-01-01T12:34:56Z job=application level=info message=Test message key1=value1"
+	output := string(mockClient.LastFormatted)
+
+	// Check that it contains expected parts
+	if !strings.Contains(output, "job=application") {
+		t.Errorf("Expected output to contain 'job=application', got: %s", output)
+	}
+
+	if !strings.Contains(output, "level=info") {
+		t.Errorf("Expected output to contain 'level=info', got: %s", output)
+	}
+
+	if !strings.Contains(output, "message=Test message") {
+		t.Errorf("Expected output to contain 'message=Test message', got: %s", output)
+	}
+
+	if !strings.Contains(output, "key1=value1") {
+		t.Errorf("Expected output to contain 'key1=value1', got: %s", output)
+	}
+}

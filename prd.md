@@ -69,8 +69,19 @@ CloudLog is a structured logging library designed to provide efficient, flexible
    - Support job/source identification
 
 5. **Testing**
+
    - Provide utilities for capturing and validating logs
    - Support searching logs by level, message, and fields
+
+6. **Asynchronous and Batch Logging**:
+
+   - Support asynchronous logging to prevent blocking operations.
+   - Provide batch logging with configurable batch size and flush intervals.
+   - Handle buffer overflow errors gracefully.
+
+7. **Graceful Shutdown**:
+
+   - Ensure all logs are flushed and resources are cleaned up during application shutdown.
 
 ### Non-Functional Requirements
 

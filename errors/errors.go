@@ -17,6 +17,12 @@ var (
 	ErrResponseError = errors.New("received error response from log service")
 	// ErrInvalidInput indicates invalid input parameters
 	ErrInvalidInput = errors.New("invalid input parameters")
+	// ErrBufferFull indicates that the async buffer is full
+	ErrBufferFull = errors.New("log buffer is full")
+	// ErrTimeout indicates an operation timed out
+	ErrTimeout = errors.New("operation timed out")
+	// ErrShutdown indicates a problem during shutdown
+	ErrShutdown = errors.New("error during shutdown")
 )
 
 // FormatError wraps an error related to log formatting
@@ -40,6 +46,36 @@ func ResponseError(statusCode int, body string) error {
 // InputError wraps an error related to invalid inputs
 func InputError(details string) error {
 	return fmt.Errorf("%w: %s", ErrInvalidInput, details)
+}
+
+// BufferFullError wraps an error to indicate buffer full condition
+func BufferFullError(err error) error {
+	return wrapError(err, ErrBufferFull, "log buffer is full")
+}
+
+// TimeoutError wraps an error to indicate timeout
+func TimeoutError(err error) error {
+	return wrapError(err, ErrTimeout, "operation timed out")
+}
+
+// ShutdownError wraps an error to indicate shutdown problems
+func ShutdownError(err error) error {
+	return wrapError(err, ErrShutdown, "error during shutdown")
+}
+
+// IsBufferFullError returns true if error is related to buffer full condition
+func IsBufferFullError(err error) bool {
+	return errors.Is(err, ErrBufferFull)
+}
+
+// IsTimeoutError returns true if error is related to timeout
+func IsTimeoutError(err error) bool {
+	return errors.Is(err, ErrTimeout)
+}
+
+// IsShutdownError returns true if error is related to shutdown problems
+func IsShutdownError(err error) bool {
+	return errors.Is(err, ErrShutdown)
 }
 
 // Create simple errors (when not wrapping another error)
@@ -69,4 +105,12 @@ func WrapError(err error, msg string) error {
 		return fmt.Errorf("%s", msg)
 	}
 	return fmt.Errorf("%s: %w", msg, err)
+}
+
+// wrapError is an internal helper for wrapping errors with sentinel error types
+func wrapError(err error, sentinel error, msg string) error {
+	if err == nil {
+		return fmt.Errorf("%w: %s", sentinel, msg)
+	}
+	return fmt.Errorf("%w: %s: %v", sentinel, msg, err)
 }
