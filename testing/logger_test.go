@@ -3,6 +3,8 @@ package testing
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTestLogger_Basics(t *testing.T) {
@@ -143,4 +145,37 @@ func TestTestLogger_ComplexJSON(t *testing.T) {
 			t.Errorf("Expected request_id abc-123, got %v", contextData["request_id"])
 		}
 	}
+}
+
+func TestContainsMessage(t *testing.T) {
+	// Test ContainsMessage function
+	logger := NewTestLogger()
+
+	// Send test logs
+	logger.Send("test-job", []byte(`{"level":"info","message":"test message 1"}`))
+	logger.Send("test-job", []byte(`{"level":"info","message":"different message"}`))
+
+	// Test finding exact message matches
+	assert.True(t, logger.ContainsMessage("test message 1"), "Should find 'test message 1'")
+
+	// Test not finding non-existent message
+	assert.False(t, logger.ContainsMessage("nonexistent message"), "Should not find 'nonexistent message'")
+
+	// Test finding another exact message
+	assert.True(t, logger.ContainsMessage("different message"), "Should find 'different message'")
+
+	// Test with empty logs
+	logger.Clear()
+	assert.False(t, logger.ContainsMessage("test message 1"), "Should not find anything in empty logs")
+}
+
+func TestSendWithInvalidJSON(t *testing.T) {
+	testLogger := NewTestLogger()
+
+	err := testLogger.Send("test-job", []byte(`{invalid json}`))
+
+	assert.Error(t, err)
+
+	logs := testLogger.Logs()
+	assert.Equal(t, 0, len(logs), "Invalid JSON should not add logs")
 }

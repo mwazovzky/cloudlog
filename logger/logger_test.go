@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -8,6 +9,8 @@ import (
 
 	clouderrors "github.com/mwazovzky/cloudlog/errors"
 	"github.com/mwazovzky/cloudlog/formatter"
+	cloudtesting "github.com/mwazovzky/cloudlog/testing"
+	"github.com/stretchr/testify/assert"
 )
 
 // MockClient is a mock implementation of the client.Interface for testing.
@@ -222,4 +225,112 @@ func TestLogger_FormatterError(t *testing.T) {
 	if !strings.Contains(err.Error(), "format log entry") {
 		t.Errorf("Expected error message to mention formatting, got: %v", err)
 	}
+}
+
+func TestErrorDebugWarn(t *testing.T) {
+	// Test Error, Debug, and Warn methods
+	testClient := cloudtesting.NewTestLogger()
+	logger := New(testClient)
+
+	// Test Error method
+	err := logger.Error("error message", "key", "value")
+	assert.NoError(t, err)
+	assert.True(t, testClient.ContainsEntry("error", "error message"))
+
+	// Clear logs before next test
+	testClient.Clear()
+
+	// Test Debug method
+	err = logger.Debug("debug message", "key", "value")
+	assert.NoError(t, err)
+	assert.True(t, testClient.ContainsEntry("debug", "debug message"))
+
+	// Clear logs before next test
+	testClient.Clear()
+
+	// Test Warn method
+	err = logger.Warn("warn message", "key", "value")
+	assert.NoError(t, err)
+	assert.True(t, testClient.ContainsEntry("warn", "warn message"))
+}
+
+func TestWithContextEdgeCases(t *testing.T) {
+	// Test WithContext with additional edge cases
+	testClient := cloudtesting.NewTestLogger()
+	logger := New(testClient)
+
+	// Test with nil context
+	contextLogger := logger.WithContext(nil)
+	assert.Equal(t, logger, contextLogger)
+
+	// Test with empty context
+	emptyCtx := context.Background()
+	contextLogger = logger.WithContext(emptyCtx)
+	// The behavior should be the same as the original logger
+	// when no values are in the context
+	assert.NotNil(t, contextLogger)
+}
+
+func TestWithJobVariations(t *testing.T) {
+	testClient := cloudtesting.NewTestLogger()
+	logger := New(testClient, WithJob("application"))
+
+	// Verify job name is set correctly
+	assert.Equal(t, "application", logger.job)
+
+	// Test with empty job name
+	jobLogger := logger.WithJob("")
+	assert.Equal(t, "", jobLogger.job)
+
+	// Test with non-empty job
+	jobLogger = logger.WithJob("test-job")
+	assert.Equal(t, "test-job", jobLogger.job)
+}
+
+func TestWithContextComplexScenarios(t *testing.T) {
+	testClient := cloudtesting.NewTestLogger()
+	logger := New(testClient)
+
+	contextLogger := logger.WithContext("key1", "value1", "key2", 42)
+	assert.NotNil(t, contextLogger)
+
+	err := contextLogger.Info("Test with context values")
+	assert.NoError(t, err)
+
+	logs := testClient.Logs()
+	assert.Equal(t, 1, len(logs))
+
+	data := logs[0].Data
+	assert.Equal(t, "value1", data["key1"], "Context key1 should be in the log with correct value")
+
+	numVal, ok := data["key2"].(float64)
+	assert.True(t, ok, "key2 should be a numeric value")
+	assert.Equal(t, float64(42), numVal, "Context key2 should be in the log with correct value")
+}
+
+func TestWithJobAdditionalCases(t *testing.T) {
+	// Test additional cases for WithJob
+	testClient := cloudtesting.NewTestLogger()
+
+	// Test the default job (typically "application")
+	logger := New(testClient)
+
+	// Test the job inheritance in method calls
+	err := logger.Info("Test with default job")
+	assert.NoError(t, err)
+
+	logs := testClient.Logs()
+	assert.Equal(t, 1, len(logs))
+	assert.True(t, testClient.ContainsEntry("info", "Test with default job"))
+
+	testClient.Clear()
+
+	// Test with special characters in job name
+	specialJobLogger := logger.WithJob("special@job#123")
+	err = specialJobLogger.Info("Test with special job name")
+	assert.NoError(t, err)
+
+	logs = testClient.Logs()
+	assert.Equal(t, 1, len(logs))
+	assert.True(t, testClient.ContainsEntry("info", "Test with special job name"))
 }

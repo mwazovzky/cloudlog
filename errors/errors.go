@@ -62,10 +62,11 @@ func Unwrap(err error) error {
 	return errors.Unwrap(err)
 }
 
-// WrapError is a generic function to wrap any error with a message
-func WrapError(err error, message string) error {
+// WrapError wraps an error with additional message
+func WrapError(err error, msg string) error {
 	if err == nil {
-		return nil
+		// Return a new error instead of nil when given nil error
+		return fmt.Errorf("%s", msg)
 	}
-	return fmt.Errorf("%s: %w", message, err)
+	return fmt.Errorf("%s: %w", msg, err)
 }

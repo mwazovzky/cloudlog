@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestFormatError(t *testing.T) {
@@ -114,4 +116,69 @@ func TestWrappingBehavior(t *testing.T) {
 	if Is(connErr, otherErr) {
 		t.Errorf("Is should not find unrelated errors")
 	}
+}
+
+func TestNewError(t *testing.T) {
+	// Test creating a new error
+	msg := "test error"
+	err := NewError(msg)
+
+	assert.Error(t, err)
+	assert.Equal(t, msg, err.Error())
+
+	// Verify the error message contains what we expect
+	assert.True(t, strings.Contains(err.Error(), msg))
+}
+
+func TestAs(t *testing.T) {
+	// Test that As correctly type asserts our custom error type
+	baseErr := NewError("test error")
+
+	// We'll use a standard error interface since we don't have access to the concrete type
+	var target error
+	result := As(baseErr, &target)
+
+	assert.True(t, result)
+	assert.NotNil(t, target)
+	assert.Equal(t, baseErr.Error(), target.Error())
+
+	// Test with a different error type
+	stdErr := errors.New("standard error")
+
+	// Reset target
+	target = nil
+	result = As(stdErr, &target)
+
+	// This should still be true because we're using the error interface
+	assert.True(t, result)
+	assert.NotNil(t, target)
+}
+
+func TestWrapError(t *testing.T) {
+	// Test wrapping an error
+	innerErr := errors.New("inner error")
+	msg := "wrapped error"
+
+	wrappedErr := WrapError(innerErr, msg)
+
+	assert.Error(t, wrappedErr)
+	assert.Contains(t, wrappedErr.Error(), msg)
+
+	// Use the standard errors.Unwrap function since we don't know the concrete type
+	unwrapped := errors.Unwrap(wrappedErr)
+	assert.Equal(t, innerErr, unwrapped)
+}
+
+func TestWrapErrorWithNilError(t *testing.T) {
+	// Test wrapping a nil error
+	msg := "wrapped nil error"
+	result := WrapError(nil, msg)
+
+	// Should return a non-nil error containing our message
+	assert.NotNil(t, result, "WrapError should return a non-nil error when given nil")
+	assert.Contains(t, result.Error(), msg, "Error should contain our message")
+
+	// Should not be unwrappable since there's no inner error
+	unwrapped := errors.Unwrap(result)
+	assert.Nil(t, unwrapped, "Unwrapping should return nil since there's no inner error")
 }

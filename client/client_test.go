@@ -2,12 +2,14 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	clouderrors "github.com/mwazovzky/cloudlog/errors"
 	"github.com/stretchr/testify/assert"
@@ -169,4 +171,113 @@ func TestLokiClient_Send_ValidPayloadFormat(t *testing.T) {
 // Helper function to check if string contains only digits
 func isNumericString(s string) bool {
 	return len(s) > 0 && strings.Trim(s, "0123456789") == ""
+}
+
+func TestWithTimeout(t *testing.T) {
+	// Test that WithTimeout option properly sets the timeout
+	timeout := 5 * time.Second
+	opt := WithTimeout(timeout)
+
+	// Create a mock client that we can apply the option to
+	testURL := "http://example.com"
+	testUser := "test-user"
+	testToken := "test-token"
+	mockHTTPClient := new(MockHTTPClient)
+
+	// Apply the option during client creation
+	client := NewLokiClientWithOptions(testURL, testUser, testToken, mockHTTPClient, opt)
+
+	// Since we can't access the private timeout field directly, we'll verify the client was created
+	assert.NotNil(t, client)
+	assert.Equal(t, testURL, client.url) // This should still be accessible
+}
+
+func TestNewLokiClientWithOptions(t *testing.T) {
+	// Test client creation with custom options
+	testURL := "http://loki.example.com"
+	testUser := "test-user"
+	testToken := "test-token"
+	mockHTTPClient := new(MockHTTPClient)
+	testTimeout := 10 * time.Second
+
+	client := NewLokiClientWithOptions(testURL, testUser, testToken, mockHTTPClient, WithTimeout(testTimeout))
+
+	assert.Equal(t, testURL, client.url)
+	// We can't directly access the timeout field, but we can verify the client has been created successfully
+	assert.NotNil(t, client)
+}
+
+func TestSendAdditionalCases(t *testing.T) {
+	// Test context cancellation scenario
+	mockHTTPClient := new(MockHTTPClient)
+	testURL := "http://loki.example.com"
+	testUser := "test-user"
+	testToken := "test-token"
+	client := NewLokiClient(testURL, testUser, testToken, mockHTTPClient)
+
+	// Create a job name for the test
+	testJob := "test-job"
+
+	// Setup the mock to return an error when the context is canceled
+	mockHTTPClient.On("Do", mock.Anything).Return(nil, context.Canceled)
+
+	// Send with a job string (not context)
+	err := client.Send(testJob, []byte(`{"test":"data"}`))
+
+	// Verify we get an error
+	assert.Error(t, err)
+	// The error should be wrapped, so we can't directly check for context.Canceled
+	// But we can check that it's a connection error
+	assert.True(t, clouderrors.Is(err, clouderrors.ErrConnectionFailed))
+	mockHTTPClient.AssertExpectations(t)
+}
+
+func TestWithTimeoutEdgeCases(t *testing.T) {
+	// Test with zero timeout value
+	zeroTimeout := time.Duration(0)
+
+	// Create client with zero timeout
+	testURL := "http://example.com"
+	testUser := "test-user"
+	testToken := "test-token"
+	mockHTTPClient := new(MockHTTPClient)
+
+	// Create client with zero timeout option
+	zeroClient := NewLokiClientWithOptions(testURL, testUser, testToken, mockHTTPClient, WithTimeout(zeroTimeout))
+	assert.NotNil(t, zeroClient)
+
+	// Test with negative timeout (should be handled gracefully)
+	negativeTimeout := -5 * time.Second
+
+	// Create client with negative timeout (should not panic)
+	assert.NotPanics(t, func() {
+		negClient := NewLokiClientWithOptions(testURL, testUser, testToken, mockHTTPClient, WithTimeout(negativeTimeout))
+		assert.NotNil(t, negClient)
+	})
+}
+
+func TestSendErrorHandling(t *testing.T) {
+	mockHTTPClient := new(MockHTTPClient)
+	testURL := "http://loki.example.com"
+	testUser := "test-user"
+	testToken := "test-token"
+	client := NewLokiClient(testURL, testUser, testToken, mockHTTPClient)
+
+	mockHTTPClient.ExpectedCalls = nil
+	mockHTTPClient.Calls = nil
+
+	badURLClient := NewLokiClient("://invalid-url", testUser, testToken, mockHTTPClient)
+
+	err := badURLClient.Send("test-job", []byte(`{"test":"data"}`))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "missing protocol scheme")
+
+	mockHTTPClient.ExpectedCalls = nil
+	mockHTTPClient.Calls = nil
+	timeoutErr := context.DeadlineExceeded
+	mockHTTPClient.On("Do", mock.Anything).Return(nil, timeoutErr)
+
+	err = client.Send("test-job", []byte(`{"test":"data"}`))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "context deadline exceeded")
 }

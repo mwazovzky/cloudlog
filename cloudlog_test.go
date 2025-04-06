@@ -9,6 +9,7 @@ import (
 
 	clouderrors "github.com/mwazovzky/cloudlog/errors"
 	"github.com/mwazovzky/cloudlog/formatter"
+	"github.com/stretchr/testify/assert"
 )
 
 // MockClient is a mock client implementation for testing
@@ -29,11 +30,8 @@ func (m *MockClient) Send(job string, formatted []byte) error {
 }
 
 func TestNewClient(t *testing.T) {
-	// This is a simple test to ensure the facade function works
-	// The actual implementation is tested in the client package
 	client := NewClient("http://test", "user", "token", &http.Client{})
 
-	// Just check that we get a non-nil client
 	if client == nil {
 		t.Error("Expected non-nil client")
 	}
@@ -52,7 +50,6 @@ func TestNew(t *testing.T) {
 		t.Errorf("Expected job 'application', got %s", mockClient.LastJob)
 	}
 
-	// Parse the JSON to verify content
 	var result map[string]interface{}
 	if err := json.Unmarshal(mockClient.LastFormatted, &result); err != nil {
 		t.Fatalf("Failed to parse JSON: %v", err)
@@ -87,7 +84,6 @@ func TestWithFormatter(t *testing.T) {
 
 	output := string(mockClient.LastFormatted)
 
-	// Check that it contains expected parts
 	if !strings.Contains(output, "job=application") {
 		t.Errorf("Expected output to contain 'job=application', got: %s", output)
 	}
@@ -128,7 +124,6 @@ func TestWithMetadata(t *testing.T) {
 		t.Fatalf("Info returned error: %v", err)
 	}
 
-	// Parse the JSON to verify content
 	var result map[string]interface{}
 	if err := json.Unmarshal(mockClient.LastFormatted, &result); err != nil {
 		t.Fatalf("Failed to parse JSON: %v", err)
@@ -140,31 +135,26 @@ func TestWithMetadata(t *testing.T) {
 }
 
 func TestErrorTypeFunctions(t *testing.T) {
-	// Test IsConnectionError
 	connectionErr := clouderrors.ConnectionError(errors.New("network down"), "failed to connect")
 	if !IsConnectionError(connectionErr) {
 		t.Error("IsConnectionError should return true for connection errors")
 	}
 
-	// Test IsResponseError
 	responseErr := clouderrors.ResponseError(403, "forbidden")
 	if !IsResponseError(responseErr) {
 		t.Error("IsResponseError should return true for response errors")
 	}
 
-	// Test IsFormatError
 	formatErr := clouderrors.FormatError(errors.New("bad format"), "invalid format")
 	if !IsFormatError(formatErr) {
 		t.Error("IsFormatError should return true for format errors")
 	}
 
-	// Test IsInputError
 	inputErr := clouderrors.InputError("missing required field")
 	if !IsInputError(inputErr) {
 		t.Error("IsInputError should return true for input errors")
 	}
 
-	// Test with generic error (should all return false)
 	genericErr := errors.New("generic error")
 	if IsConnectionError(genericErr) || IsResponseError(genericErr) ||
 		IsFormatError(genericErr) || IsInputError(genericErr) {
@@ -172,5 +162,19 @@ func TestErrorTypeFunctions(t *testing.T) {
 	}
 }
 
-// Tests for NewTestLogger and NewTestingLogger were removed as these functions
-// were moved to the testing package
+func TestNewClientWithOptions(t *testing.T) {
+	url := "http://loki.example.com"
+	user := "test-user"
+	token := "test-token"
+	httpClient := &http.Client{}
+
+	client := NewClientWithOptions(url, user, token, httpClient)
+
+	assert.NotNil(t, client)
+}
+
+func TestIsError(t *testing.T) {
+	cloudlErr := clouderrors.InputError("test error")
+	assert.True(t, IsError(cloudlErr), "IsError should return true for custom cloudlog errors")
+	assert.False(t, IsError(nil), "IsError should return false for nil error")
+}
