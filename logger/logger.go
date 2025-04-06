@@ -2,16 +2,17 @@
 package logger
 
 import (
-	"fmt"
+	"time"
 
 	"github.com/mwazovzky/cloudlog/client"
+	"github.com/mwazovzky/cloudlog/delivery"
 	"github.com/mwazovzky/cloudlog/errors"
 	"github.com/mwazovzky/cloudlog/formatter"
 )
 
 // Logger is the main logger implementation
 type Logger struct {
-	client    client.LogSender
+	deliverer delivery.LogDeliverer // Changed from client.LogSender to delivery.LogDeliverer
 	formatter formatter.Formatter
 	job       string
 	metadata  map[string]interface{}
@@ -41,10 +42,17 @@ func WithMetadata(key string, value interface{}) Option {
 	}
 }
 
-// New creates a new Logger instance
+// New creates a new Logger instance with synchronous delivery
 func New(client client.LogSender, options ...Option) *Logger {
+	// Create a synchronous deliverer wrapping the client
+	deliverer := delivery.NewSyncDeliverer(client)
+	return NewWithDeliverer(deliverer, options...)
+}
+
+// NewWithDeliverer creates a new Logger with a specific deliverer
+func NewWithDeliverer(deliverer delivery.LogDeliverer, options ...Option) *Logger {
 	logger := &Logger{
-		client:    client,
+		deliverer: deliverer,
 		formatter: formatter.NewJSONFormatter(),
 		job:       "application",
 		metadata:  make(map[string]interface{}),
@@ -77,10 +85,20 @@ func (l *Logger) Warn(message string, keyvals ...interface{}) error {
 	return l.log("warn", message, keyvals...)
 }
 
+// Close gracefully shuts down the logger
+func (l *Logger) Close() error {
+	return l.deliverer.Close()
+}
+
+// Flush forces delivery of any buffered messages
+func (l *Logger) Flush() error {
+	return l.deliverer.Flush()
+}
+
 // WithContext returns a new logger with additional context
 func (l *Logger) WithContext(keyvals ...interface{}) *Logger {
 	newLogger := &Logger{
-		client:    l.client,
+		deliverer: l.deliverer, // Changed from client to deliverer
 		formatter: l.formatter,
 		job:       l.job,
 		metadata:  make(map[string]interface{}),
@@ -106,7 +124,7 @@ func (l *Logger) WithContext(keyvals ...interface{}) *Logger {
 // WithJob returns a new logger with a different job name
 func (l *Logger) WithJob(job string) *Logger {
 	newLogger := &Logger{
-		client:    l.client,
+		deliverer: l.deliverer, // Changed from client to deliverer
 		formatter: l.formatter,
 		job:       job,
 		metadata:  make(map[string]interface{}),
@@ -139,15 +157,12 @@ func (l *Logger) log(level string, message string, keyvals ...interface{}) error
 	// Create log entry
 	entry := formatter.NewLogEntry(l.job, level, allKeyVals...)
 
-	// Format and send the log entry
+	// Format the log entry
 	formatted, err := l.formatter.Format(entry)
 	if err != nil {
 		return errors.FormatError(err, "failed to format log entry")
 	}
 
-	if err := l.client.Send(l.job, formatted); err != nil {
-		return fmt.Errorf("failed to send log entry: %w", err)
-	}
-
-	return nil
+	// Use deliverer instead of client
+	return l.deliverer.Deliver(l.job, level, message, formatted, time.Now())
 }

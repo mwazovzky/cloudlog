@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mwazovzky/cloudlog"
+	"github.com/mwazovzky/cloudlog/delivery"
 	"github.com/mwazovzky/cloudlog/formatter"
 )
 
@@ -29,57 +30,60 @@ func main() {
 	lokiUsername := getEnvOrDefault("LOKI_USERNAME", "")
 	lokiToken := getEnvOrDefault("LOKI_AUTH_TOKEN", "")
 
-	var logger *cloudlog.Logger
+	var syncLogger *cloudlog.Logger
 
 	if lokiURL != "" && lokiUsername != "" && lokiToken != "" {
 		// Create a new HTTP client with reasonable timeout
 		httpClient := &http.Client{
 			Timeout: 5 * time.Second,
 		}
-
-		// Create Loki client and logger
+		// Create Loki client
 		client := cloudlog.NewClient(lokiURL, lokiUsername, lokiToken, httpClient)
-		logger = cloudlog.New(client, cloudlog.WithJob("example-service"))
 		fmt.Println("Sending logs to Loki instance at:", lokiURL)
+		// Create explicit sync logger
+		syncDeliverer := delivery.NewSyncDeliverer(client)
+		syncLogger = cloudlog.NewWithDeliverer(syncDeliverer, cloudlog.WithJob("sync-example-service"))
 	} else {
 		// Create console output logger if Loki credentials aren't provided
 		fmt.Println("Loki credentials not provided, logging to console instead")
-		logger = createConsoleLogger()
+		consoleClient := &consoleClient{}
+		// Create explicit sync logger
+		syncDeliverer := delivery.NewSyncDeliverer(consoleClient)
+		syncLogger = cloudlog.NewWithDeliverer(
+			syncDeliverer,
+			cloudlog.WithJob("sync-example-service"),
+			cloudlog.WithFormatter(formatter.NewStringFormatter()),
+		)
 	}
-
-	// Basic logging
-	err := logger.Info("Application started", "version", "1.0.0")
+	err := syncLogger.Info("Application started", "version", "1.0.0")
 	if err != nil {
 		fmt.Println("Error logging to Loki:", err)
 	}
-
 	// Logging with additional context
-	userLogger := logger.WithContext("user_id", "123456")
+	userLogger := syncLogger.WithContext("user_id", "123456")
 	err = userLogger.Info("User logged in", "login_method", "password")
 	if err != nil {
 		fmt.Println("Error logging to Loki:", err)
 	}
-
 	// Logging different levels
-	err = logger.Debug("Debug information", "memory_usage", "128MB")
+	err = syncLogger.Debug("Debug information", "memory_usage", "128MB")
 	if err != nil {
 		fmt.Println("Error logging to Loki:", err)
 		os.Exit(1)
 	}
-
-	err = logger.Warn("Resource usage high", "cpu", "80%")
+	err = syncLogger.Warn("Resource usage high", "cpu", "80%")
 	if err != nil {
 		fmt.Println("Error logging to Loki:", err)
 		os.Exit(1)
 	}
-
-	err = logger.Error("Operation failed", "error", "connection timeout", "retry", true)
+	err = syncLogger.Error("Operation failed", "error", "connection timeout", "retry", true)
 	if err != nil {
 		fmt.Println("Error logging to Loki:", err)
 		os.Exit(1)
 	}
-
-	fmt.Println("Example completed successfully!")
+	// Good practice to call Flush and Close even for sync loggers
+	syncLogger.Flush()
+	syncLogger.Close()
 }
 
 // getEnvOrDefault gets environment variable or returns default if not set
@@ -88,12 +92,6 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
-}
-
-// createConsoleLogger creates a logger that prints to console
-func createConsoleLogger() *cloudlog.Logger {
-	return cloudlog.New(&consoleClient{},
-		cloudlog.WithFormatter(formatter.NewStringFormatter()))
 }
 
 // consoleClient implements the LogSender interface to print logs to console

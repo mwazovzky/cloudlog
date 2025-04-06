@@ -9,6 +9,7 @@ package cloudlog
 
 import (
 	"github.com/mwazovzky/cloudlog/client"
+	"github.com/mwazovzky/cloudlog/delivery"
 	"github.com/mwazovzky/cloudlog/errors"
 	"github.com/mwazovzky/cloudlog/formatter"
 	"github.com/mwazovzky/cloudlog/logger"
@@ -20,6 +21,10 @@ var (
 	ErrConnectionFailed = errors.ErrConnectionFailed
 	ErrResponseError    = errors.ErrResponseError
 	ErrInvalidInput     = errors.ErrInvalidInput
+	// Add new error types
+	ErrBufferFull = errors.ErrBufferFull
+	ErrTimeout    = errors.ErrTimeout
+	ErrShutdown   = errors.ErrShutdown
 )
 
 // IsConnectionError returns true if the error is related to connection failures
@@ -42,6 +47,21 @@ func IsInputError(err error) bool {
 	return errors.Is(err, ErrInvalidInput)
 }
 
+// IsBufferFullError returns true if error is related to buffer full condition
+func IsBufferFullError(err error) bool {
+	return errors.Is(err, ErrBufferFull)
+}
+
+// IsTimeoutError returns true if error is related to timeout
+func IsTimeoutError(err error) bool {
+	return errors.Is(err, ErrTimeout)
+}
+
+// IsShutdownError returns true if error is related to shutdown problems
+func IsShutdownError(err error) bool {
+	return errors.Is(err, ErrShutdown)
+}
+
 // Logger is an alias for logger.Logger to maintain backwards compatibility
 type Logger = logger.Logger
 
@@ -59,6 +79,11 @@ func NewClientWithOptions(url, username, token string, httpClient client.Doer,
 // New creates a new logger with the given client and options
 func New(c client.LogSender, options ...logger.Option) *logger.Logger {
 	return logger.New(c, options...)
+}
+
+// NewWithDeliverer creates a logger with a custom deliverer
+func NewWithDeliverer(deliverer delivery.LogDeliverer, options ...logger.Option) *logger.Logger {
+	return logger.NewWithDeliverer(deliverer, options...)
 }
 
 // WithFormatter sets the formatter for the logger
