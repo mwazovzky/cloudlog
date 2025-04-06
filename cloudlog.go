@@ -1,83 +1,82 @@
+// Package cloudlog provides a structured logging system designed for
+// integration with Grafana Loki. It offers a simple façade over the
+// functionality in subpackages, making it easy to get started while
+// still allowing advanced usage through direct subpackage imports.
+
+// Re-export main types and functions for backward compatibility
+// and convenience while encouraging the use of subpackages for advanced usage
 package cloudlog
 
-// Package logger provides a simple interface for logging messages to Grafana Loki.
-// It allows logging messages with different severity levels (info, error, debug)
-// and supports adding key-value pairs to the log entries.
-
 import (
-	"encoding/json"
-	"fmt"
-	"time"
+	"github.com/mwazovzky/cloudlog/client"
+	"github.com/mwazovzky/cloudlog/errors"
+	"github.com/mwazovzky/cloudlog/formatter"
+	"github.com/mwazovzky/cloudlog/logger"
 )
 
-// LogStream represents a single log stream.
-type Stream struct {
-	Stream map[string]string `json:"stream"`
-	Values [][]string        `json:"values"`
+// Export error types for convenience
+var (
+	ErrInvalidFormat    = errors.ErrInvalidFormat
+	ErrConnectionFailed = errors.ErrConnectionFailed
+	ErrResponseError    = errors.ErrResponseError
+	ErrInvalidInput     = errors.ErrInvalidInput
+)
+
+// IsConnectionError returns true if the error is related to connection failures
+func IsConnectionError(err error) bool {
+	return errors.Is(err, ErrConnectionFailed)
 }
 
-type LogEntry struct {
-	Streams []Stream `json:"streams"`
+// IsResponseError returns true if the error is related to an error response
+func IsResponseError(err error) bool {
+	return errors.Is(err, ErrResponseError)
 }
 
-func (l *LogEntry) ToJSON() ([]byte, error) {
-	return json.Marshal(l)
+// IsFormatError returns true if the error is related to formatting issues
+func IsFormatError(err error) bool {
+	return errors.Is(err, ErrInvalidFormat)
 }
 
-type ClientInterface interface {
-	Send(payload LogEntry) error
+// IsInputError returns true if the error is related to invalid inputs
+func IsInputError(err error) bool {
+	return errors.Is(err, ErrInvalidInput)
 }
 
-type Logger struct {
-	client  ClientInterface
-	service string
+// Logger is an alias for logger.Logger to maintain backwards compatibility
+type Logger = logger.Logger
+
+// NewClient creates a new Loki client
+func NewClient(url, username, token string, httpClient client.Doer) client.LogSender {
+	return client.NewLokiClient(url, username, token, httpClient)
 }
 
-func NewLogger(client ClientInterface, service string) *Logger {
-	return &Logger{client: client, service: service}
+// Add a NewClientWithOptions function for consistency
+func NewClientWithOptions(url, username, token string, httpClient client.Doer,
+	options ...client.LokiClientOption) client.LogSender {
+	return client.NewLokiClientWithOptions(url, username, token, httpClient, options...)
 }
 
-func (l *Logger) Log(level string, message string, keyValues ...interface{}) error {
-	if len(keyValues)%2 != 0 {
-		return fmt.Errorf("keyValues must be in key-value pairs")
-	}
-
-	stream := make(map[string]string)
-	// Add service name to the stream
-	stream["service_name"] = l.service
-	// Add log level to the stream
-	stream["level"] = level
-	// Convert keyValues to a map
-	for i := 0; i < len(keyValues); i += 2 {
-		key, ok := keyValues[i].(string)
-		if !ok {
-			return fmt.Errorf("key must be a string, got %T", keyValues[i])
-		}
-		// Use %+v to include field names in struct string representation
-		stream[key] = fmt.Sprintf("%+v", keyValues[i+1])
-	}
-
-	timestamp := time.Now().UnixNano()
-
-	// Prepare the log payload
-	payload := LogEntry{
-		Streams: []Stream{
-			{
-				Stream: stream,
-				Values: [][]string{{fmt.Sprintf("%d", timestamp), message}},
-			},
-		},
-	}
-
-	return l.client.Send(payload)
+// New creates a new logger with the given client and options
+func New(c client.LogSender, options ...logger.Option) *logger.Logger {
+	return logger.New(c, options...)
 }
 
-func (l *Logger) Info(message string, keyValues ...interface{}) error {
-	return l.Log("info", message, keyValues...)
+// WithFormatter sets the formatter for the logger
+func WithFormatter(f formatter.Formatter) logger.Option {
+	return logger.WithFormatter(f)
 }
-func (l *Logger) Error(message string, keyValues ...interface{}) error {
-	return l.Log("error", message, keyValues...)
+
+// WithJob sets the job name for the logger
+func WithJob(job string) logger.Option {
+	return logger.WithJob(job)
 }
-func (l *Logger) Debug(message string, keyValues ...interface{}) error {
-	return l.Log("debug", message, keyValues...)
+
+// WithMetadata adds default metadata to all log entries
+func WithMetadata(key string, value interface{}) logger.Option {
+	return logger.WithMetadata(key, value)
+}
+
+// Add method to check for any error (that's not just a specific type)
+func IsError(err error) bool {
+	return err != nil
 }

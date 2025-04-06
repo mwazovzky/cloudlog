@@ -1,98 +1,184 @@
-# Logger Package
+# CloudLog - Structured Logging for Go
 
-The `logger` package provides a structured logging interface for sending logs to Grafana Loki.
+[![Go Report Card](https://goreportcard.com/badge/github.com/mwazovzky/cloudlog)](https://goreportcard.com/report/github.com/mwazovzky/cloudlog)
+[![GoDoc](https://godoc.org/github.com/mwazovzky/cloudlog?status.svg)](https://godoc.org/github.com/mwazovzky/cloudlog)
+
+CloudLog is a structured logging library designed for sending logs to Grafana Loki and other logging backends. It provides a clean, simple interface for logging structured data with key-value pairs and customizable formatting.
+
+## Features
+
+- **Structured Logging**: Key-value pair logging with support for all data types
+- **Multiple Log Levels**: Info, Error, Debug, and Warn levels
+- **Context Propagation**: Add context to loggers that gets included in all messages
+- **Custom Formatters**: JSON and human-readable string formats built-in
+- **Loki Integration**: Native support for Grafana Loki with proper streams protocol
+- **Error Handling**: Type-based error handling with useful categorization
+- **Testing Utilities**: Comprehensive tools for testing logging behavior
 
 ## Installation
 
 ```bash
-go get github.com/mwazovzky/cloudlog/logger
+go get github.com/mwazovzky/cloudlog
 ```
 
-## Usage
+## Quick Start
 
 ```go
+package main
+
 import (
-    "github.com/mwazovzky/cloudlog/logger"
-    "github.com/mwazovzky/cloudlog/grafanaclient"
+	"github.com/mwazovzky/cloudlog"
+	"net/http"
+	"time"
 )
 
 func main() {
-    client := grafanaclient.NewClient(grafanaclient.Config{
-        LokiURL:      "http://loki-instance",
-        LokiUsername: "example-username",
-        LokiAuthToken: "example-token",
-    }, &http.Client{})
+	// Create Loki client
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	client := cloudlog.NewClient(
+		"http://loki-instance/api/v1/push",
+		"username",
+		"token",
+		httpClient,
+	)
 
-    log := logger.NewLogger(client)
+	// Create logger
+	logger := cloudlog.New(client)
 
-    log.Info("example-job", "key1", "value1", "key2", "value2")
+	// Basic logging
+	logger.Info("Application started", "version", "1.0.0")
+
+	// With context
+	reqLogger := logger.WithContext("request_id", "abc-123")
+	reqLogger.Info("Request received", "method", "GET", "path", "/users")
+
+	// Different log levels
+	reqLogger.Debug("Processing request", "params", "limit=100")
+	reqLogger.Warn("High latency detected", "latency_ms", 250)
+	reqLogger.Error("Request failed", "status", 500, "error", "database connection lost")
 }
 ```
 
-## Features
+## Package Structure
 
-- Structured logging with key-value pairs.
-- Integration with Grafana Loki.
-- Easy-to-use interface.
+- **cloudlog** (root): Convenience functions and type aliases
+- **client**: Log-sending implementations (LokiClient)
+- **logger**: Core logging functionality
+- **formatter**: Log formatting options (JSON, string)
+- **errors**: Error types and handling utilities
+- **testing**: Testing utilities
 
-## Logger Implementation
+## Advanced Usage
 
-### Overview
+### Custom Formatters
 
-The `logger` package uses synchronous API calls to send logs to Grafana Loki. While this approach is simple and effective for many use cases, it introduces certain risks and limitations that should be considered.
+```go
+// JSON formatter with custom options
+jsonFormatter := formatter.NewJSONFormatter(
+    formatter.WithTimeFormat(time.RFC1123),
+    formatter.WithTimestampField("@timestamp"),
+)
 
-### Issues and Risks
+// Human-readable formatter
+stringFormatter := formatter.NewStringFormatter(
+    formatter.WithKeyValueSeparator(": "),
+    formatter.WithPairSeparator(" | "),
+)
 
-#### 1. Blocking Behavior
+logger := cloudlog.New(client, cloudlog.WithFormatter(stringFormatter))
+```
 
-- **Description**: Each log message is sent to Loki in a blocking manner. If the Loki server is slow to respond or there are network issues, the application may experience delays.
-- **Impact**:
-  - Increased latency in critical application paths.
-  - Potential bottlenecks in high-throughput scenarios.
+### Context and Job Names
 
-#### 2. Network Failures
+```go
+// Add context to logs
+userLogger := logger.WithContext(
+    "user_id", "user-123",
+    "session_id", "sess-456",
+)
 
-- **Description**: If the network connection to Loki is unstable or unavailable, the `logger` will return an error for each failed log attempt.
-- **Impact**:
-  - Logs may be lost if errors are not handled properly.
-  - Repeated failures can degrade application performance.
+// Change job/source name
+apiLogger := logger.WithJob("api-service")
+```
 
-#### 3. No Retry Mechanism
+### Error Handling
 
-- **Description**: The current implementation does not include retries for failed log attempts.
-- **Impact**:
-  - Temporary network issues or server unavailability can result in lost logs.
-  - Applications requiring guaranteed log delivery may need to implement retries externally.
+```go
+err := logger.Info("Test message")
+if err != nil {
+    if cloudlog.IsConnectionError(err) {
+        // Handle connection error
+    } else if cloudlog.IsFormatError(err) {
+        // Handle formatting error
+    }
+}
+```
 
-#### 4. High Volume Logging
+### Testing
 
-- **Description**: In scenarios with a high volume of logs, the synchronous nature of the API calls can overwhelm the Loki server or the network.
-- **Impact**:
-  - Increased risk of throttling or rate-limiting by the Loki server.
-  - Higher resource consumption (CPU, memory, and network bandwidth).
+```go
+func TestFunction(t *testing.T) {
+    // Create test logger
+    testLogger := testing.NewTestLogger()
+    logger := cloudlog.New(testLogger)
 
-### Feature requests
+    // Run function that logs
+    functionUnderTest(logger)
 
-#### 1. Asynchronous Logging
+    // Verify logs
+    if !testLogger.ContainsMessage("Operation completed") {
+        t.Error("Expected log message not found")
+    }
 
-- Implement an asynchronous logging mechanism where log messages are queued and sent to Loki in the background. This reduces blocking behavior and improves application performance.
+    errorLogs := testLogger.LogsOfLevel("error")
+    if len(errorLogs) > 0 {
+        t.Error("Function logged unexpected errors")
+    }
+}
+```
 
-#### 2. Batching Logs
+## Examples
 
-- Group multiple log messages into a single payload and send them to Loki in batches. This reduces the number of API calls and improves efficiency.
+For complete examples, see the [examples directory](./examples).
 
-#### 3. Retry Mechanism
+## Configuration
 
-- Add a retry mechanism with exponential backoff for failed log attempts. This improves reliability during temporary network issues.
+CloudLog can be configured through environment variables or code:
 
-#### 4. Circuit Breaker
+```go
+// With options
+logger := cloudlog.New(client,
+    cloudlog.WithJob("my-service"),
+    cloudlog.WithMetadata("environment", "production"),
+)
+```
 
-- Implement a circuit breaker pattern to temporarily stop sending logs if the Loki server is unavailable or experiencing issues. This prevents overwhelming the server and reduces resource consumption.
+## Loki Protocol Support
 
-#### 5. Monitoring and Metrics
+CloudLog's Loki client implements the Loki push API protocol properly:
 
-- Add monitoring and metrics to track the performance and reliability of the `logger`. This helps identify bottlenecks and issues in production.
+```go
+// The client automatically formats logs into the required Loki format:
+{
+  "streams": [
+    {
+      "stream": {
+        "job": "your-service-name"
+      },
+      "values": [
+        ["1626882892000000000", "{\"level\":\"info\",\"message\":\"your log message\",\"key\":\"value\"}"]
+      ]
+    }
+  ]
+}
+```
 
-### Conclusion
+This ensures logs are correctly ingested by Grafana Loki.
 
-While the current synchronous implementation of the `logger` is simple and effective for many use cases, it may not be suitable for high-throughput or latency-sensitive applications. By addressing the issues and risks outlined above, the `logger` can be made more robust and scalable.
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

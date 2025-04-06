@@ -1,227 +1,180 @@
 package cloudlog
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
+	"strings"
 	"testing"
 
+	clouderrors "github.com/mwazovzky/cloudlog/errors"
+	"github.com/mwazovzky/cloudlog/formatter"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
-// MockClient is a mock implementation of the Client interface.
+// MockClient is a mock client implementation for testing
 type MockClient struct {
-	mock.Mock
+	LastJob       string
+	LastFormatted []byte
+	ShouldError   bool
 }
 
-func (m *MockClient) Send(payload LogEntry) error {
-	args := m.Called(payload)
-	return args.Error(0)
-}
-
-func TestLogger_Info_Success(t *testing.T) {
-	mockClient := new(MockClient)
-	mockClient.On("Send", mock.Anything).Return(nil)
-
-	logger := NewLogger(mockClient, "test-service") // Pass mockClient as the interface
-	err := logger.Info("test-job", "key1", "value1", "key2", "value2")
-	assert.NoError(t, err, "Expected no error when logging info")
-	mockClient.AssertExpectations(t)
-}
-
-func TestLogger_Error_Success(t *testing.T) {
-	mockClient := new(MockClient)
-	mockClient.On("Send", mock.Anything).Return(nil)
-
-	logger := NewLogger(mockClient, "test-service") // Pass mockClient as the interface
-	err := logger.Error("test-job", "key1", "value1", "key2", "value2")
-	assert.NoError(t, err, "Expected no error when logging error")
-	mockClient.AssertExpectations(t)
-}
-
-func TestLogger_Debug_Success(t *testing.T) {
-	mockClient := new(MockClient)
-	mockClient.On("Send", mock.Anything).Return(nil)
-
-	logger := NewLogger(mockClient, "test-service") // Pass mockClient as the interface
-	err := logger.Debug("test-job", "key1", "value1", "key2", "value2")
-	assert.NoError(t, err, "Expected no error when logging debug")
-	mockClient.AssertExpectations(t)
-}
-
-func TestLogger_InvalidKeyValues(t *testing.T) {
-	mockClient := new(MockClient)
-	logger := NewLogger(mockClient, "test-service") // Pass mockClient as the interface
-
-	// Test with an odd number of keyValues
-	err := logger.Info("test-job", "key1", "value1", "key2") // Odd number of keyValues
-	assert.Error(t, err, "Expected error when keyValues are not in pairs")
-}
-
-func TestLogger_ClientError(t *testing.T) {
-	mockClient := new(MockClient)
-	mockClient.On("Send", mock.Anything).Return(errors.New("mock error"))
-
-	logger := NewLogger(mockClient, "test-service") // Pass mockClient as the interface
-	err := logger.Info("test-job", "key1", "value1")
-	assert.Error(t, err, "Expected error when client fails to send payload")
-	mockClient.AssertExpectations(t)
-}
-
-func TestLogger_Log_StringArguments(t *testing.T) {
-	mockClient := new(MockClient)
-	mockClient.On("Send", mock.Anything).Return(nil)
-
-	logger := NewLogger(mockClient, "test-service")
-
-	// Call the Log method with string arguments
-	err := logger.Log("info", "Test message", "key1", "value1")
-	assert.NoError(t, err, "Expected no error when logging with string arguments")
-
-	// Capture the payload passed to the mock client
-	mockClient.AssertCalled(t, "Send", mock.MatchedBy(func(payload LogEntry) bool {
-		// Verify the structure of the LogEntry
-		assert.Len(t, payload.Streams, 1, "Expected one stream in the payload")
-		stream := payload.Streams[0]
-
-		// Verify the stream metadata
-		assert.Equal(t, "test-service", stream.Stream["service_name"], "Expected service_name to match")
-		assert.Equal(t, "info", stream.Stream["level"], "Expected level to match")
-		assert.Equal(t, "value1", stream.Stream["key1"], "Expected key1 to match")
-
-		// Verify the log message
-		assert.Len(t, stream.Values, 1, "Expected one log entry in the values")
-		assert.Equal(t, "Test message", stream.Values[0][1], "Expected log message to match")
-
-		return true
-	}))
-}
-
-func TestLogger_Log_IntArguments(t *testing.T) {
-	mockClient := new(MockClient)
-	mockClient.On("Send", mock.Anything).Return(nil)
-
-	logger := NewLogger(mockClient, "test-service")
-
-	// Call the Log method with integer arguments
-	err := logger.Log("info", "Test message", "key1", 42)
-	assert.NoError(t, err, "Expected no error when logging with integer arguments")
-
-	// Capture the payload passed to the mock client
-	mockClient.AssertCalled(t, "Send", mock.MatchedBy(func(payload LogEntry) bool {
-		// Verify the structure of the LogEntry
-		assert.Len(t, payload.Streams, 1, "Expected one stream in the payload")
-		stream := payload.Streams[0]
-
-		// Verify the stream metadata
-		assert.Equal(t, "test-service", stream.Stream["service_name"], "Expected service_name to match")
-		assert.Equal(t, "info", stream.Stream["level"], "Expected level to match")
-		assert.Equal(t, "42", stream.Stream["key1"], "Expected key1 to be converted to string")
-
-		// Verify the log message
-		assert.Len(t, stream.Values, 1, "Expected one log entry in the values")
-		assert.Equal(t, "Test message", stream.Values[0][1], "Expected log message to match")
-
-		return true
-	}))
-}
-
-func TestLogger_Log_FloatArguments(t *testing.T) {
-	mockClient := new(MockClient)
-	mockClient.On("Send", mock.Anything).Return(nil)
-
-	logger := NewLogger(mockClient, "test-service")
-
-	// Call the Log method with float arguments
-	err := logger.Log("info", "Test message", "key1", 3.14)
-	assert.NoError(t, err, "Expected no error when logging with float arguments")
-
-	// Capture the payload passed to the mock client
-	mockClient.AssertCalled(t, "Send", mock.MatchedBy(func(payload LogEntry) bool {
-		// Verify the structure of the LogEntry
-		assert.Len(t, payload.Streams, 1, "Expected one stream in the payload")
-		stream := payload.Streams[0]
-
-		// Verify the stream metadata
-		assert.Equal(t, "test-service", stream.Stream["service_name"], "Expected service_name to match")
-		assert.Equal(t, "info", stream.Stream["level"], "Expected level to match")
-		assert.Equal(t, "3.14", stream.Stream["key1"], "Expected key1 to be converted to string")
-
-		// Verify the log message
-		assert.Len(t, stream.Values, 1, "Expected one log entry in the values")
-		assert.Equal(t, "Test message", stream.Values[0][1], "Expected log message to match")
-
-		return true
-	}))
-}
-
-type TestStruct struct {
-	Field1 string
-	Field2 int
-}
-
-func TestLogger_Log_StructArgument(t *testing.T) {
-	mockClient := new(MockClient)
-	mockClient.On("Send", mock.Anything).Return(nil)
-
-	logger := NewLogger(mockClient, "test-service")
-
-	// Create a struct to pass as a parameter
-	testStruct := TestStruct{
-		Field1: "value1",
-		Field2: 42,
+func (m *MockClient) Send(job string, formatted []byte) error {
+	if m.ShouldError {
+		return errors.New("mock error")
 	}
 
-	// Call the Log method with a struct argument
-	err := logger.Log("info", "Test message", "key1", testStruct)
-	assert.NoError(t, err, "Expected no error when logging with a struct argument")
-
-	// Capture the payload passed to the mock client
-	mockClient.AssertCalled(t, "Send", mock.MatchedBy(func(payload LogEntry) bool {
-		// Verify the structure of the LogEntry
-		assert.Len(t, payload.Streams, 1, "Expected one stream in the payload")
-		stream := payload.Streams[0]
-
-		// Verify the stream metadata
-		assert.Equal(t, "test-service", stream.Stream["service_name"], "Expected service_name to match")
-		assert.Equal(t, "info", stream.Stream["level"], "Expected level to match")
-		assert.Equal(t, "{Field1:value1 Field2:42}", stream.Stream["key1"], "Expected key1 to match the exact string representation of the struct")
-
-		// Verify the log message
-		assert.Len(t, stream.Values, 1, "Expected one log entry in the values")
-		assert.Equal(t, "Test message", stream.Values[0][1], "Expected log message to match")
-
-		return true
-	}))
+	m.LastJob = job
+	m.LastFormatted = formatted
+	return nil
 }
 
-func TestLogger_Log_SliceArgument(t *testing.T) {
-	mockClient := new(MockClient)
-	mockClient.On("Send", mock.Anything).Return(nil)
+func TestNewClient(t *testing.T) {
+	client := NewClient("http://test", "user", "token", &http.Client{})
 
-	logger := NewLogger(mockClient, "test-service")
+	if client == nil {
+		t.Error("Expected non-nil client")
+	}
+}
 
-	// Create a slice of strings to pass as a parameter
-	testSlice := []string{"value1", "value2", "value3"}
+func TestNew(t *testing.T) {
+	mockClient := &MockClient{}
+	logger := New(mockClient)
 
-	// Call the Log method with a slice argument
-	err := logger.Log("info", "Test message", "key1", testSlice)
-	assert.NoError(t, err, "Expected no error when logging with a slice argument")
+	err := logger.Info("Test message", "key1", "value1", "key2", 42)
+	if err != nil {
+		t.Fatalf("Info returned error: %v", err)
+	}
 
-	// Capture the payload passed to the mock client
-	mockClient.AssertCalled(t, "Send", mock.MatchedBy(func(payload LogEntry) bool {
-		// Verify the structure of the LogEntry
-		assert.Len(t, payload.Streams, 1, "Expected one stream in the payload")
-		stream := payload.Streams[0]
+	if mockClient.LastJob != "application" {
+		t.Errorf("Expected job 'application', got %s", mockClient.LastJob)
+	}
 
-		// Verify the stream metadata
-		assert.Equal(t, "test-service", stream.Stream["service_name"], "Expected service_name to match")
-		assert.Equal(t, "info", stream.Stream["level"], "Expected level to match")
-		assert.Equal(t, "[value1 value2 value3]", stream.Stream["key1"], "Expected key1 to match the string representation of the slice")
+	var result map[string]interface{}
+	if err := json.Unmarshal(mockClient.LastFormatted, &result); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
 
-		// Verify the log message
-		assert.Len(t, stream.Values, 1, "Expected one log entry in the values")
-		assert.Equal(t, "Test message", stream.Values[0][1], "Expected log message to match")
+	if result["level"] != "info" {
+		t.Errorf("Expected level info, got %s", result["level"])
+	}
 
-		return true
-	}))
+	if result["message"] != "Test message" {
+		t.Errorf("Expected message 'Test message', got %v", result["message"])
+	}
+
+	if result["key1"] != "value1" {
+		t.Errorf("Expected key1=value1, got %v", result["key1"])
+	}
+
+	if result["key2"].(float64) != 42 {
+		t.Errorf("Expected key2=42, got %v", result["key2"])
+	}
+}
+
+func TestWithFormatter(t *testing.T) {
+	mockClient := &MockClient{}
+	stringFormatter := formatter.NewStringFormatter()
+	logger := New(mockClient, WithFormatter(stringFormatter))
+
+	err := logger.Info("Test message", "key1", "value1")
+	if err != nil {
+		t.Fatalf("Info returned error: %v", err)
+	}
+
+	output := string(mockClient.LastFormatted)
+
+	if !strings.Contains(output, "job=application") {
+		t.Errorf("Expected output to contain 'job=application', got: %s", output)
+	}
+
+	if !strings.Contains(output, "level=info") {
+		t.Errorf("Expected output to contain 'level=info', got: %s", output)
+	}
+
+	if !strings.Contains(output, "message=Test message") {
+		t.Errorf("Expected output to contain 'message=Test message', got: %s", output)
+	}
+
+	if !strings.Contains(output, "key1=value1") {
+		t.Errorf("Expected output to contain 'key1=value1', got: %s", output)
+	}
+}
+
+func TestWithJob(t *testing.T) {
+	mockClient := &MockClient{}
+	logger := New(mockClient, WithJob("custom-job"))
+
+	err := logger.Info("Test message")
+	if err != nil {
+		t.Fatalf("Info returned error: %v", err)
+	}
+
+	if mockClient.LastJob != "custom-job" {
+		t.Errorf("Expected job 'custom-job', got %s", mockClient.LastJob)
+	}
+}
+
+func TestWithMetadata(t *testing.T) {
+	mockClient := &MockClient{}
+	logger := New(mockClient, WithMetadata("version", "1.0"))
+
+	err := logger.Info("Test message")
+	if err != nil {
+		t.Fatalf("Info returned error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(mockClient.LastFormatted, &result); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	if result["version"] != "1.0" {
+		t.Errorf("Expected version=1.0, got %v", result["version"])
+	}
+}
+
+func TestErrorTypeFunctions(t *testing.T) {
+	connectionErr := clouderrors.ConnectionError(errors.New("network down"), "failed to connect")
+	if !IsConnectionError(connectionErr) {
+		t.Error("IsConnectionError should return true for connection errors")
+	}
+
+	responseErr := clouderrors.ResponseError(403, "forbidden")
+	if !IsResponseError(responseErr) {
+		t.Error("IsResponseError should return true for response errors")
+	}
+
+	formatErr := clouderrors.FormatError(errors.New("bad format"), "invalid format")
+	if !IsFormatError(formatErr) {
+		t.Error("IsFormatError should return true for format errors")
+	}
+
+	inputErr := clouderrors.InputError("missing required field")
+	if !IsInputError(inputErr) {
+		t.Error("IsInputError should return true for input errors")
+	}
+
+	genericErr := errors.New("generic error")
+	if IsConnectionError(genericErr) || IsResponseError(genericErr) ||
+		IsFormatError(genericErr) || IsInputError(genericErr) {
+		t.Error("Error type checks should return false for unrelated errors")
+	}
+}
+
+func TestNewClientWithOptions(t *testing.T) {
+	url := "http://loki.example.com"
+	user := "test-user"
+	token := "test-token"
+	httpClient := &http.Client{}
+
+	client := NewClientWithOptions(url, user, token, httpClient)
+
+	assert.NotNil(t, client)
+}
+
+func TestIsError(t *testing.T) {
+	cloudlErr := clouderrors.InputError("test error")
+	assert.True(t, IsError(cloudlErr), "IsError should return true for custom cloudlog errors")
+	assert.False(t, IsError(nil), "IsError should return false for nil error")
 }
