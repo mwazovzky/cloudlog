@@ -246,3 +246,149 @@ logger.Info("Info message", "key1", "value1")
 logger.Error("Error message", "key1", "value1")
 logger.Debug("Debug message", "key1", "value1")
 ```
+
+# CloudLog - Test-Driven Development Guide
+
+## Testing Approach
+
+CloudLog follows test-driven development principles. All core functionality should have associated tests that verify behavior independently.
+
+## Test Structure
+
+The test suite is organized into several categories:
+
+1. **Unit Tests**: Test individual components in isolation
+2. **Integration Tests**: Test interactions between components
+3. **Example Tests**: Verify that examples work as documented
+
+## Running Tests
+
+Run all tests with:
+
+```bash
+go test ./... -v
+```
+
+Run specific package tests with:
+
+```bash
+go test ./client -v
+go test ./formatter -v
+```
+
+## Test Coverage
+
+Generate test coverage reports with:
+
+```bash
+go test ./... -coverprofile=cover.out
+go tool cover -html=cover.out
+```
+
+Aim for at least 80% test coverage for all packages.
+
+## Test Categories
+
+### 1. Client Tests
+
+The client package tests verify:
+
+- HTTP request creation
+- Authentication header setup
+- Error handling for network failures
+- Error handling for non-2xx responses
+- Timeout handling
+- Loki payload format validation, ensuring:
+  - Proper streams structure
+  - Correct job labels
+  - Nanosecond timestamps
+  - Properly structured values array
+
+### 2. Formatter Tests
+
+Formatter tests verify:
+
+- Correct JSON serialization
+- Field naming customization
+- Time formatting
+- String formatting
+- Error handling for non-serializable values
+
+### 3. Logger Tests
+
+Logger tests verify:
+
+- Log level handling
+- Context propagation
+- Metadata inclusion
+- Job name setting
+- Error propagation from formatters and clients
+
+### 4. Error Package Tests
+
+Error tests verify:
+
+- Error type identification
+- Error wrapping
+- Error message construction
+- Error chain traversal
+
+### 5. Testing Package Tests
+
+Testing utilities tests verify:
+
+- Log capture
+- Filtering by level and content
+- Searching by field values
+
+## Mocking Strategy
+
+CloudLog uses explicit mock implementations for testing:
+
+- **MockClient**: Implements the LogSender interface
+- **MockFormatter**: Implements the Formatter interface
+- **TestLogger**: Special implementation for capturing logs
+
+## Assertion Patterns
+
+For consistent test writing, use these patterns:
+
+### Error Testing
+
+```go
+err := someOperation()
+if err != nil {
+    t.Errorf("Expected no error, got: %v", err)
+}
+```
+
+### Specific Error Type Testing
+
+```go
+if !errors.Is(err, errors.ErrConnectionFailed) {
+    t.Errorf("Expected connection error, got: %v", err)
+}
+```
+
+### Value Testing
+
+```go
+if result["level"] != "info" {
+    t.Errorf("Expected level 'info', got: %v", result["level"])
+}
+```
+
+## Test Cases
+
+### Client Package Test Cases
+
+#### 1. Loki Payload Format Validation
+
+- **Description**: Verify that the client creates a correctly formatted Loki payload
+- **Expected Outcome**: The payload should have the proper structure with streams, labels, and values
+- **Test Steps**:
+  1. Create a client and send a log message
+  2. Capture the HTTP request payload
+  3. Validate the payload structure matches Loki's API requirements
+  4. Verify job name is included as a label
+  5. Verify timestamp is properly formatted as a nanosecond timestamp
