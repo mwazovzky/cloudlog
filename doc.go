@@ -1,137 +1,103 @@
 /*
-Package cloudlog provides a structured logging system designed for integration with logging backends
-like Grafana Loki. It offers multiple logging strategies including synchronous, asynchronous, and
-batch delivery modes.
+Package cloudlog provides a structured logging system designed for integration with Grafana Loki
+and other logging backends. It features key-value pair logging, context propagation, and
+flexible formatting options.
+
+# Key Components
+
+1. Logger: Interface that defines logging operations (Info, Error, Debug, Warn)
+2. Client: Implementation for sending logs to backends like Loki
+3. Formatter: Transforms log entries into proper format (JSON, string, Loki protocol)
+4. SyncLogger: Synchronous implementation that blocks until logs are sent
+5. AsyncLogger: Non-blocking implementation with batching and buffering
 
 # Basic Usage
 
-The simplest way to use CloudLog is with the synchronous logger:
+Create a client and synchronous logger:
 
-	// Create an HTTP client with a reasonable timeout
 	httpClient := &http.Client{Timeout: 5 * time.Second}
+	client := cloudlog.NewClient("http://loki-instance/api/v1/push", "username", "token", httpClient)
+	logger := cloudlog.NewSync(client, cloudlog.WithJob("my-service"))
 
-	// Create a client for your log backend
-	client := cloudlog.NewClient("http://loki:3100/loki/api/v1/push", "username", "token", httpClient)
+Create an asynchronous logger for high-volume scenarios:
 
-	// Create a logger with synchronous delivery (blocks until logs are sent)
-	logger := cloudlog.New(client, cloudlog.WithJob("my-service"))
+	asyncLogger := cloudlog.NewAsync(client,
+		cloudlog.WithJob("my-service"),
+		cloudlog.WithBufferSize(10000),
+		cloudlog.WithBatchSize(100),
+		cloudlog.WithFlushInterval(1 * time.Second),
+		cloudlog.WithWorkers(4),
+	)
 
-	// Log a message with structured data
-	logger.Info("User logged in", "user_id", "12345", "login_method", "oauth")
+Log a message with key-value pairs:
 
-	// Log an error
-	err := someOperation()
-	if err != nil {
-		logger.Error("Operation failed", "error", err.Error())
-	}
+	logger.Info("User logged in",
+		"user_id", "12345",
+		"method", "oauth",
+		"ip", "192.168.1.1")
 
-# Asynchronous Logging
+# Context Propagation
 
-For high-throughput applications, use asynchronous logging to avoid blocking:
+Add persistent context to a logger:
 
-	// Create an async logger with default settings
-	asyncLogger := cloudlog.NewAsync(client, cloudlog.WithJob("my-service"))
-
-	// Log messages without blocking
-	for i := 0; i < 1000; i++ {
-		asyncLogger.Info("Processing item", "item_id", i)
-	}
-
-	// Ensure logs are sent before shutdown
-	asyncLogger.Flush()
-	asyncLogger.Close()
-
-# Batch Logging
-
-For optimal performance when logging high volumes, use batch logging:
-
-	// Create a batch logger with custom configuration
-	config := cloudlog.DefaultDeliveryConfig()
-	config.BatchSize = 200
-	config.FlushInterval = 2 * time.Second
-
-	batchLogger := cloudlog.NewBatchLoggerWithConfig(client, config)
-
-	// Log messages will be collected in batches
-	for i := 0; i < 1000; i++ {
-		batchLogger.Info("Processing item", "item_id", i)
-	}
-
-	// Ensure logs are sent before shutdown
-	batchLogger.Flush()
-	batchLogger.Close()
-
-# Adding Context
-
-You can add context to your logs:
-
-	// Create a logger with context
-	userLogger := logger.WithContext("user_id", "12345", "request_id", "abc-123")
+	// Create a context-specific logger
+	userLogger := logger.WithContext("user_id", "12345", "session_id", "abc123")
 
 	// All logs from this logger will include the context
-	userLogger.Info("User action performed")
+	userLogger.Info("Profile updated")
+	userLogger.Warn("Password change attempted")
+
+# Formatting Options
+
+Configure formatting:
+
+	// String formatter for console output
+	consoleLogger := cloudlog.NewSync(
+		consoleClient,
+		cloudlog.WithFormatter(formatter.NewStringFormatter(
+			formatter.String.WithTimeFormat(time.RFC822),
+			formatter.WithKeyValueSeparator(": "),
+			formatter.WithPairSeparator(" | "),
+		)),
+	)
+
+	// Loki formatter with custom field names
+	lokiLogger := cloudlog.NewSync(
+		client,
+		cloudlog.WithFormatter(formatter.NewLokiFormatter(
+			formatter.Loki.WithTimestampField("@timestamp"),
+			formatter.Loki.WithLevelField("severity"),
+			formatter.WithLabelKeys("request_id", "user_id"),
+		)),
+	)
 
 # Error Handling
 
-CloudLog provides detailed error information:
+Check and handle specific error types:
 
-	err := logger.Info("Test message")
+	err := logger.Info("Operation performed", "status", "success")
 	if err != nil {
-		if cloudlog.IsConnectionError(err) {
-			// Handle connection error
-		} else if cloudlog.IsBufferFullError(err) {
-			// Handle buffer full error
+		switch {
+		case cloudlog.IsConnectionError(err):
+			// Handle connection problem
+		case cloudlog.IsFormatError(err):
+			// Handle formatting issue
+		case cloudlog.IsBufferFullError(err):
+			// AsyncLogger buffer is full
+		default:
+			// Handle other errors
 		}
 	}
 
-# Advanced Configuration
+# Graceful Shutdown
 
-For advanced use cases, you can create custom delivery configurations:
+Ensure all logs are processed before exiting:
 
-	config := cloudlog.DefaultDeliveryConfig()
-	config.Async = true
-	config.QueueSize = 5000
-	config.Workers = 4
-	config.MaxRetries = 3
-	config.RetryInterval = 500 * time.Millisecond
+	// For synchronous loggers
+	syncLogger.Close()
 
-	customLogger := cloudlog.NewAsyncWithConfig(client, config)
-
-# Custom Deliverers
-
-You can implement your own delivery strategies by implementing the LogDeliverer interface:
-
-	type CustomDeliverer struct {
-		// Your implementation details
-	}
-
-	// Implement the LogDeliverer interface methods
-
-	// Use your custom deliverer
-	logger := cloudlog.NewWithDeliverer(customDeliverer)
-
-# Best Practices
-
-1. Always call Flush() and Close() before shutting down async or batch loggers
-2. Set appropriate QueueSize to avoid buffer overflow errors
-3. Handle logging errors appropriately for your application
-4. Use structured logging (key-value pairs) instead of embedding values in messages
-5. Set meaningful job names to identify log sources
-
-# Asynchronous and Batch Logging
-
-CloudLog supports asynchronous and batch logging to optimize performance:
-
-	// Create an async logger
-	asyncLogger := cloudlog.NewAsync(client, cloudlog.WithJob("async-logger"))
-
-	// Create a batch logger
-	batchConfig := cloudlog.DefaultDeliveryConfig()
-	batchConfig.BatchSize = 3
-	batchLogger := cloudlog.NewBatchLoggerWithConfig(client, batchConfig)
-
-	// Ensure logs are flushed before shutdown
-	asyncLogger.Flush()
-	batchLogger.Flush()
+	// For asynchronous loggers, flush before closing
+	asyncLogger.Flush()  // Wait for all buffered logs to be sent
+	asyncLogger.Close()  // Release resources
 */
 package cloudlog

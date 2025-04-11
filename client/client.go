@@ -11,6 +11,26 @@ import (
 	"github.com/mwazovzky/cloudlog/errors"
 )
 
+// LogSender defines the interface for sending log entries to backends
+type LogSender interface {
+	Send(entry LokiEntry) error
+}
+
+// LokiStream represents a single stream in the Loki protocol
+type LokiStream struct {
+	Stream map[string]string `json:"stream"`
+	Values [][]string        `json:"values"`
+}
+
+// LokiEntry represents the full payload for Loki's push API
+type LokiEntry struct {
+	Streams []LokiStream `json:"streams"`
+}
+
+// The custom MarshalJSON method is redundant since the struct already has proper JSON tags
+// and doesn't require any special handling during marshaling.
+// Removing this method will use Go's default JSON marshaling which works perfectly fine here.
+
 // Doer is an interface that matches http.Client's Do method
 type Doer interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -62,36 +82,17 @@ func NewLokiClientWithOptions(url, user, token string, httpClient Doer, options 
 	return client
 }
 
-// Send sends a log entry to Loki
-// Returns an error if the request fails or receives a non-204 response
-func (c *LokiClient) Send(job string, data []byte) error {
-	// Create Loki-specific payload structure
-	// Loki expects a specific format with 'streams' containing 'labels' and 'entries'
-	lokiPayload := map[string]interface{}{
-		"streams": []map[string]interface{}{
-			{
-				"stream": map[string]string{
-					"job": job,
-				},
-				"values": [][]string{
-					{
-						fmt.Sprintf("%d", time.Now().UnixNano()),
-						string(data),
-					},
-				},
-			},
-		},
-	}
-
+// Send sends a pre-constructed Loki entry to the Loki server
+func (c *LokiClient) Send(entry LokiEntry) error {
 	// Convert the Loki payload to JSON
-	lokiData, err := json.Marshal(lokiPayload)
+	lokiData, err := json.Marshal(entry)
 	if err != nil {
-		return errors.FormatError(err, "failed to format Loki payload")
+		return fmt.Errorf("%w: failed to format Loki payload: %v", errors.ErrInvalidFormat, err)
 	}
 
 	req, err := http.NewRequest("POST", c.url, bytes.NewBuffer(lokiData))
 	if err != nil {
-		return errors.InputError(fmt.Sprintf("failed to create request: %v", err))
+		return fmt.Errorf("%w: failed to create request: %v", errors.ErrInvalidInput, err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -99,13 +100,14 @@ func (c *LokiClient) Send(job string, data []byte) error {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return errors.ConnectionError(err, "failed to send log entry to Loki")
+		return fmt.Errorf("%w: %v", errors.ErrConnectionFailed, err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return errors.ResponseError(resp.StatusCode, string(body))
+		// Make sure we use ErrResponseError to wrap the error for non-2xx responses
+		return fmt.Errorf("%w: status code %d: %s", errors.ErrResponseError, resp.StatusCode, string(body))
 	}
 
 	return nil

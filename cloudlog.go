@@ -1,160 +1,156 @@
-// Package cloudlog provides a structured logging system designed for
-// integration with Grafana Loki. It offers a simple façade over the
-// functionality in subpackages, making it easy to get started while
-// still allowing advanced usage through direct subpackage imports.
-
+// Package cloudlog provides a simplified interface for logging to cloud-based logging services.
 package cloudlog
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/mwazovzky/cloudlog/client"
-	"github.com/mwazovzky/cloudlog/delivery"
 	"github.com/mwazovzky/cloudlog/errors"
 	"github.com/mwazovzky/cloudlog/formatter"
 	"github.com/mwazovzky/cloudlog/logger"
 )
 
-// Export error types for convenience
+// Error type check functions - re-exported from errors package for convenience
 var (
-	ErrInvalidFormat    = errors.ErrInvalidFormat
-	ErrConnectionFailed = errors.ErrConnectionFailed
-	ErrResponseError    = errors.ErrResponseError
-	ErrInvalidInput     = errors.ErrInvalidInput
-	ErrBufferFull       = errors.ErrBufferFull
-	ErrTimeout          = errors.ErrTimeout
-	ErrShutdown         = errors.ErrShutdown
+	IsFormatError     = errors.IsFormatError
+	IsConnectionError = errors.IsConnectionError
+	IsResponseError   = errors.IsResponseError
+	IsInputError      = errors.IsInputError
+	IsBufferFullError = errors.IsBufferFullError
+	IsTimeoutError    = errors.IsTimeoutError
+	IsShutdownError   = errors.IsShutdownError
 )
 
-// IsConnectionError returns true if the error is related to connection failures
-func IsConnectionError(err error) bool {
-	return errors.Is(err, ErrConnectionFailed)
+// Interface re-exports for public API
+type (
+	Logger       = logger.Logger
+	LogProducer  = logger.LogProducer
+	LogManager   = logger.LogManager
+	ContextAware = logger.ContextAware
+	LogSender    = client.LogSender
+)
+
+// Option re-exports
+type (
+	Option      = logger.Option
+	AsyncOption = logger.AsyncOption
+)
+
+// NewSync creates a new synchronous logger that implements the Logger interface
+func NewSync(client client.LogSender, options ...logger.Option) logger.Logger {
+	return logger.NewSync(client, options...)
 }
 
-// IsResponseError returns true if the error is related to an error response
-func IsResponseError(err error) bool {
-	return errors.Is(err, ErrResponseError)
+// NewAsync creates an asynchronous logger with non-blocking behavior
+func NewAsync(client client.LogSender, options ...logger.AsyncOption) logger.Logger {
+	return logger.NewAsync(client, options...)
 }
 
-// IsFormatError returns true if the error is related to formatting issues
-func IsFormatError(err error) bool {
-	return errors.Is(err, ErrInvalidFormat)
-}
-
-// IsInputError returns true if the error is related to invalid inputs
-func IsInputError(err error) bool {
-	return errors.Is(err, ErrInvalidInput)
-}
-
-// IsBufferFullError returns true if error is related to buffer full condition
-func IsBufferFullError(err error) bool {
-	return errors.Is(err, ErrBufferFull)
-}
-
-// IsTimeoutError returns true if error is related to timeout
-func IsTimeoutError(err error) bool {
-	return errors.Is(err, ErrTimeout)
-}
-
-// IsShutdownError returns true if error is related to shutdown problems
-func IsShutdownError(err error) bool {
-	return errors.Is(err, ErrShutdown)
-}
-
-// Logger is an alias for logger.Logger to maintain backwards compatibility
-type Logger = logger.Logger
-
-// DeliveryConfig is an alias for delivery.Config to make it available from the root package
-type DeliveryConfig = delivery.Config
-
-// DeliveryStatus is an alias for delivery.DeliveryStatus
-type DeliveryStatus = delivery.DeliveryStatus
-
-// LogDeliverer is an alias for delivery.LogDeliverer
-type LogDeliverer = delivery.LogDeliverer
-
-// NewClient creates a new Loki client
-func NewClient(url, username, token string, httpClient client.Doer) client.LogSender {
-	return client.NewLokiClient(url, username, token, httpClient)
-}
-
-// NewClientWithOptions creates a client with additional options
-func NewClientWithOptions(url, username, token string, httpClient client.Doer,
-	options ...client.LokiClientOption) client.LogSender {
-	return client.NewLokiClientWithOptions(url, username, token, httpClient, options...)
-}
-
-// DefaultDeliveryConfig returns the default delivery configuration
-func DefaultDeliveryConfig() DeliveryConfig {
-	return delivery.DefaultConfig()
-}
-
-// New creates a new logger with the given client and synchronous delivery
-func New(c client.LogSender, options ...logger.Option) *logger.Logger {
-	return logger.New(c, options...)
-}
-
-// NewWithDeliverer creates a logger with a custom deliverer
-func NewWithDeliverer(deliverer delivery.LogDeliverer, options ...logger.Option) *logger.Logger {
-	return logger.NewWithDeliverer(deliverer, options...)
-}
-
-// NewAsync creates a new logger with asynchronous delivery using default config
-func NewAsync(c client.LogSender, options ...logger.Option) *logger.Logger {
-	config := delivery.DefaultConfig()
-	config.Async = true
-	return logger.NewAsync(c, config, options...)
-}
-
-// NewAsyncWithConfig creates a new logger with custom async configuration
-func NewAsyncWithConfig(c client.LogSender, config delivery.Config, options ...logger.Option) *logger.Logger {
-	return logger.NewAsync(c, config, options...)
-}
-
-// NewBatchLogger creates a new logger with batch processing
-func NewBatchLogger(c client.LogSender, options ...logger.Option) *logger.Logger {
-	config := delivery.DefaultConfig()
-	config.Async = true
-
-	batchDeliverer := delivery.NewBatchDeliverer(c, config)
-	return logger.NewWithDeliverer(batchDeliverer, options...)
-}
-
-// NewBatchLoggerWithConfig creates a new logger with custom batch configuration
-func NewBatchLoggerWithConfig(c client.LogSender, config delivery.Config, options ...logger.Option) *logger.Logger {
-	batchDeliverer := delivery.NewBatchDeliverer(c, config)
-	return logger.NewWithDeliverer(batchDeliverer, options...)
-}
-
-// NewSyncDeliverer creates a synchronous deliverer
-func NewSyncDeliverer(sender client.LogSender) delivery.LogDeliverer {
-	return delivery.NewSyncDeliverer(sender)
-}
-
-// NewAsyncDeliverer creates an asynchronous deliverer
-func NewAsyncDeliverer(sender client.LogSender, config delivery.Config) delivery.LogDeliverer {
-	return delivery.NewAsyncDeliverer(sender, config)
-}
-
-// NewBatchDeliverer creates a batch deliverer
-func NewBatchDeliverer(sender client.LogSender, config delivery.Config) delivery.LogDeliverer {
-	return delivery.NewBatchDeliverer(sender, config)
-}
-
-// WithFormatter sets the formatter for the logger
-func WithFormatter(f formatter.Formatter) logger.Option {
+// WithFormatter, WithJob, WithMetadata pass through to logger package
+func WithFormatter(f formatter.Formatter) Option {
 	return logger.WithFormatter(f)
 }
 
-// WithJob sets the job name for the logger
-func WithJob(job string) logger.Option {
+func WithJob(job string) Option {
 	return logger.WithJob(job)
 }
 
-// WithMetadata adds default metadata to all log entries
-func WithMetadata(key string, value interface{}) logger.Option {
+func WithMetadata(key string, value interface{}) Option {
 	return logger.WithMetadata(key, value)
 }
 
-// IsError checks if an error is present
-func IsError(err error) bool {
-	return err != nil
+// NewClient creates a new Loki client with the given credentials
+func NewClient(url, username, token string, httpClient *http.Client) LogSender {
+	return client.NewLokiClient(url, username, token, httpClient)
+}
+
+// NewClientWithOptions creates a client with the provided options
+func NewClientWithOptions(url, username, token string, httpClient *http.Client, opts ...client.LokiClientOption) LogSender {
+	return client.NewLokiClientWithOptions(url, username, token, httpClient, opts...)
+}
+
+// NewLokiFormatter creates a formatter specifically designed for Loki output
+// This formatter handles both the Loki protocol structure and log content formatting
+func NewLokiFormatter(options ...formatter.LokiFormatterOption) formatter.Formatter {
+	return formatter.NewLokiFormatter(options...)
+}
+
+// WithLabelKeys specifies keys from the log entry that should be added as Loki stream labels
+func WithLabelKeys(keys ...string) formatter.LokiFormatterOption {
+	return formatter.WithLabelKeys(keys...)
+}
+
+// WithTimeFormat sets the time format for timestamp fields in LokiFormatter
+func WithTimeFormat(format string) formatter.LokiFormatterOption {
+	return formatter.Loki.WithTimeFormat(format)
+}
+
+// WithTimestampField sets the field name for timestamps in LokiFormatter
+func WithTimestampField(field string) formatter.LokiFormatterOption {
+	return formatter.Loki.WithTimestampField(field)
+}
+
+// WithLevelField sets the field name for log level in LokiFormatter
+func WithLevelField(field string) formatter.LokiFormatterOption {
+	return formatter.Loki.WithLevelField(field)
+}
+
+// WithJobField sets the field name for job in LokiFormatter
+func WithJobField(field string) formatter.LokiFormatterOption {
+	return formatter.Loki.WithJobField(field)
+}
+
+// WithStringTimeFormat sets the time format for StringFormatter
+func WithStringTimeFormat(format string) formatter.StringFormatterOption {
+	return formatter.String.WithTimeFormat(format)
+}
+
+// WithKeyValueSeparator sets the separator between keys and values in StringFormatter
+func WithKeyValueSeparator(separator string) formatter.StringFormatterOption {
+	return formatter.WithKeyValueSeparator(separator)
+}
+
+// WithPairSeparator sets the separator between key-value pairs in StringFormatter
+func WithPairSeparator(separator string) formatter.StringFormatterOption {
+	return formatter.WithPairSeparator(separator)
+}
+
+// Async configuration options
+func WithBufferSize(size int) AsyncOption {
+	return logger.WithBufferSize(size)
+}
+
+func WithBatchSize(size int) AsyncOption {
+	return logger.WithBatchSize(size)
+}
+
+func WithFlushInterval(interval time.Duration) AsyncOption {
+	return logger.WithFlushInterval(interval)
+}
+
+func WithWorkers(count int) AsyncOption {
+	return logger.WithWorkers(count)
+}
+
+func WithBlockOnFull(block bool) AsyncOption {
+	return logger.WithBlockOnFull(block)
+}
+
+// Re-export async logger options
+func WithAsyncFormatter(f formatter.Formatter) AsyncOption {
+	return logger.WithAsyncFormatter(f)
+}
+
+func WithAsyncJob(job string) AsyncOption {
+	return logger.WithAsyncJob(job)
+}
+
+func WithAsyncMetadata(key string, value interface{}) AsyncOption {
+	return logger.WithAsyncMetadata(key, value)
+}
+
+// WithErrorHandler sets a custom handler for internal errors in AsyncLogger
+func WithErrorHandler(handler errors.ErrorHandler) AsyncOption {
+	return logger.WithErrorHandler(handler)
 }

@@ -65,211 +65,90 @@ The `Logger` is a core component responsible for structured logging in the appli
 2. Errors are correctly propagated to the caller.
 3. The logger is easy to use and integrates seamlessly with the `Client`.
 
-# Technical Design Document (TDD) for Logger
+# Technical Design Document (TDD) for CloudLog
 
 ## Overview
 
-The `Logger` is a core component responsible for structured logging in the application. It provides a simple interface for logging messages with key-value pairs and integrates with the `Client` to send logs to a Grafana Loki instance.
-
----
+CloudLog provides structured logging with Grafana Loki support. It offers a simple API for creating and formatting log messages, then dispatches them via a client.
 
 ## Architecture
 
-### 1. **Core Components**
+### Core Components
 
-- **`Logger`**:
-  - The main struct responsible for logging messages.
-  - Encapsulates a `Client` instance for sending logs.
-- **`Client`**:
-  - Handles communication with the Grafana Loki instance.
-  - Provides methods for sending log payloads.
-- **`LogPayload`**:
-  - A struct representing the log payload sent to Loki.
-- **`LogStream`**:
-  - A struct representing a single log stream within the payload.
+1. Logger
 
----
+   - Interface and SyncLogger implementation.
+   - Supports info, error, debug, warn levels.
+   - Holds context (job name, metadata).
 
-## Methods
+2. Client
 
-### 1. **NewLogger**
+   - Sends data to Loki.
+   - Manages network operations, authentication, and errors.
 
-- **Purpose**: Creates a new instance of the `Logger`.
-- **Signature**:
-  ```go
-  func NewLogger(client ClientInterface, service string) *Logger
-  ```
+3. Formatter
 
-### 2. **Log**
+   - Formats LogEntry to JSON or string.
+   - Supports custom formatters.
 
-- **Purpose**: Logs a message with a specified log level.
-- **Signature**:
-  ```go
-  func (l *Logger) Log(level string, message string, keyValues ...interface{}) error
-  ```
+4. Errors
+   - Provides sentinel errors (ErrConnectionFailed, ErrInvalidFormat, etc.).
 
-### 3. **Info**
+## Key Flows
 
-- **Purpose**: Logs an informational message.
-- **Signature**:
-  ```go
-  func (l *Logger) Info(message string, keyValues ...interface{}) error
-  ```
+1. Creating a Logger
 
-### 4. **Error**
+   - Use cloudlog.NewSync(...) with a client.
+   - Provide options (WithJob, WithFormatter).
 
-- **Purpose**: Logs an error message.
-- **Signature**:
-  ```go
-  func (l *Logger) Error(message string, keyValues ...interface{}) error
-  ```
+2. Logging a Message
 
-### 5. **Debug**
+   - Logger methods (Info, Error, Debug, Warn) create a LogEntry, apply context, format, and send it.
 
-- **Purpose**: Logs a debug message.
-- **Signature**:
-  ```go
-  func (l *Logger) Debug(message string, keyValues ...interface{}) error
-  ```
-
----
-
-## Error Handling
-
-### 1. **Invalid Key-Value Pairs**
-
-- If the key-value pairs are invalid (e.g., odd number of arguments, non-string keys), the `Log` method returns an error.
-
-### 2. **Serialization Errors**
-
-- If the log payload cannot be serialized to JSON, the `Log` method returns an error.
-
-### 3. **Client Errors**
-
-- If the `Client` fails to send the log payload, the `Log` method returns the error from the `Client`.
-
----
+3. Error Propagation
+   - Formatting errors return ErrInvalidFormat.
+   - Network errors return ErrConnectionFailed.
+   - Server errors return ErrResponseError.
 
 ## Extensibility
 
-### 1. **Additional Log Levels**
-
-- The `Log` method can be extended to support additional log levels (e.g., `Warn`, `Fatal`).
-
-### 2. **Custom Metadata**
-
-- The `LogPayload` struct can be extended to include custom metadata (e.g., application version, environment).
-
----
+- Pluggable formatters (implement Formatter interface).
+- Custom clients (implement LogSender).
+- Customizable fields (job, level, timestamp) via options.
 
 ## Testing Strategy
 
-### 1. **Unit Tests**
+1. Unit Tests
 
-- Mock the `Client` to simulate various scenarios (e.g., successful sends, serialization errors, client errors).
-- Verify that the `Log`, `Info`, `Error`, and `Debug` methods behave as expected in each scenario.
+   - Mock the network client and check payload.
+   - Verify log method structure.
 
-### 2. **Integration Tests**
-
-- Use a real `Client` to send logs to a test Loki instance.
-- Verify that the logs are received and processed correctly.
-
----
+2. Error Handling
+   - Force errors.
+   - Verify sentinel errors.
 
 ## Test Cases
 
-### 1. Successful Log with String Arguments
+### Client Package
 
-- **Description**: Verify that the `Log` method correctly handles string arguments.
-- **Expected Outcome**: The `Log` method forms a valid `LogEntry` and sends it successfully.
-
-### 2. Successful Log with Integer Arguments
-
-- **Description**: Verify that the `Log` method correctly handles integer arguments.
-- **Expected Outcome**: The `Log` method converts integers to strings and forms a valid `LogEntry`.
-
-### 3. Successful Log with Float Arguments
-
-- **Description**: Verify that the `Log` method correctly handles float arguments.
-- **Expected Outcome**: The `Log` method converts floats to strings and forms a valid `LogEntry`.
-
-### 4. Successful Log with Struct Arguments
-
-- **Description**: Verify that the `Log` method correctly handles struct arguments.
-- **Expected Outcome**: The `Log` method converts structs to their string representation and forms a valid `LogEntry`.
-
-### 5. Successful Log with Slice Arguments
-
-- **Description**: Verify that the `Log` method correctly handles slice arguments.
-- **Expected Outcome**: The `Log` method converts slices to their string representation and forms a valid `LogEntry`.
-
-### 6. Invalid Key-Value Pairs
-
-- **Description**: Verify that the `Log` method returns an error for invalid key-value pairs.
-- **Expected Outcome**: The `Log` method returns an error indicating the issue.
-
-### 7. Serialization Error
-
-- **Description**: Verify that the `Log` method returns an error if the log payload cannot be serialized.
-- **Expected Outcome**: The `Log` method returns a serialization error.
-
-### 8. Client Error
-
-- **Description**: Verify that the `Log` method returns an error if the `Client` fails to send the log payload.
-- **Expected Outcome**: The `Log` method returns the client error.
-
-### 9. Buffer Overflow Handling
-
-- **Description**: Verify that the logger handles buffer overflow errors gracefully.
-- **Expected Outcome**: The logger returns a buffer full error when the queue is full.
-
-### 10. Graceful Shutdown
-
-- **Description**: Verify that all logs are flushed and resources are cleaned up during shutdown.
-- **Expected Outcome**: No logs are lost, and all resources are properly released.
-
----
-
-## Tools and Frameworks
-
-### 1. **Testing Framework**
-
-- Use `testify` for assertions and mocking.
-
-### 2. **Mocking**
-
-- Use a `MockClient` to simulate client behavior.
-
-### 3. **Code Coverage**
-
-- Ensure at least 90% test coverage for the `Logger` and `Client` components.
-
----
-
-## Example Usage
-
-```go
-client := NewClient("http://loki-instance", "username", "token", httpClient)
-logger := NewLogger(client, "test-service")
-
-logger.Info("Info message", "key1", "value1")
-logger.Error("Error message", "key1", "value1")
-logger.Debug("Debug message", "key1", "value1")
-```
+1. Loki Payload Format Validation
+   - Verify correct Loki payload structure.
+   - Verify job name as label.
+   - Verify nanosecond timestamp.
 
 # CloudLog - Test-Driven Development Guide
 
-## Testing Approach
+## Unified Test Structure
 
-CloudLog follows test-driven development principles. All core functionality should have associated tests that verify behavior independently.
+1. **Unit Tests**: Test individual components in isolation.
+2. **Integration Tests**: Test interactions between components.
+3. **Error Tests**: Verify error identification and propagation.
+4. **Performance Tests**: Measure throughput and memory usage.
 
-## Test Structure
+## Assertion Patterns
 
-The test suite is organized into several categories:
-
-1. **Unit Tests**: Test individual components in isolation
-2. **Integration Tests**: Test interactions between components
-3. **Example Tests**: Verify that examples work as documented
+- Use `assert` for soft assertions and `require` for hard assertions.
+- Prefer table-driven tests for repetitive scenarios.
 
 ## Running Tests
 
@@ -279,23 +158,14 @@ Run all tests with:
 go test ./... -v
 ```
 
-Run specific package tests with:
-
-```bash
-go test ./client -v
-go test ./formatter -v
-```
-
-## Test Coverage
-
-Generate test coverage reports with:
+Generate coverage reports with:
 
 ```bash
 go test ./... -coverprofile=cover.out
 go tool cover -html=cover.out
 ```
 
-Aim for at least 80% test coverage for all packages.
+Aim for at least 85% coverage.
 
 ## Test Categories
 
@@ -402,3 +272,201 @@ if result["level"] != "info" {
   3. Validate the payload structure matches Loki's API requirements
   4. Verify job name is included as a label
   5. Verify timestamp is properly formatted as a nanosecond timestamp
+
+# Technical Design Document for CloudLog
+
+## Architecture Overview
+
+CloudLog follows a modular design with clear separation of concerns between logging, formatting, and transport. The system uses composition over inheritance and emphasizes interface-based design.
+
+### Core Components
+
+1. **Logger Interface**
+
+   - Defines the core logging operations (Info, Error, Debug, Warn)
+   - Specifies context propagation methods (WithContext, WithJob)
+   - Includes lifecycle methods (Flush, Close)
+
+2. **SyncLogger Implementation**
+
+   - Implements Logger with synchronous, blocking behavior
+   - Formats and sends each log entry immediately
+   - Returns errors directly to caller
+
+3. **AsyncLogger Implementation**
+
+   - Implements Logger with asynchronous, non-blocking behavior
+   - Buffers log entries for batch processing
+   - Uses worker goroutines to process logs in background
+   - Only returns errors when buffer is full or logger is closed
+
+4. **Client**
+
+   - Implements protocol-specific transport
+   - Manages network communication
+   - Handles authentication and error wrapping
+
+5. **Formatter**
+
+   - Transforms log entries into wire format
+   - Supports Loki protocol and human-readable formats
+   - Enables customization via functional options
+
+6. **Errors**
+   - Provides sentinel error values
+   - Implements type-safe error checking
+   - Wraps underlying errors with context
+
+## Data Flow
+
+### Synchronous Flow
+
+1. Application calls logger.Info/Error/Debug/Warn
+2. SyncLogger creates log entry with timestamp and level
+3. SyncLogger formats entry using configured formatter
+4. SyncLogger sends formatted log via client
+5. Error (if any) is returned immediately to caller
+
+### Asynchronous Flow
+
+1. Application calls logger.Info/Error/Debug/Warn
+2. AsyncLogger creates async log entry containing job, level, message, and metadata
+3. AsyncLogger sends entry to internal buffer channel
+4. Worker goroutines pull entries from buffer
+5. Workers accumulate entries until batch size or interval reached
+6. Workers format and send batches via client
+7. Errors during processing are handled internally (not returned to caller)
+
+## Interface Contracts
+
+### Logger Interface
+
+```go
+type Logger interface {
+  Info(message string, keyvals ...interface{}) error
+  Error(message string, keyvals ...interface{}) error
+  Debug(message string, keyvals ...interface{}) error
+  Warn(message string, keyvals ...interface{}) error
+  WithContext(keyvals ...interface{}) Logger
+  WithJob(job string) Logger
+  Flush() error
+  Close() error
+}
+```
+
+### LogSender Interface
+
+```go
+type LogSender interface {
+  Send(job string, formatted []byte) error
+}
+```
+
+### Formatter Interface
+
+```go
+type Formatter interface {
+  Format(entry LogEntry) ([]byte, error)
+}
+```
+
+## Extension Points
+
+1. **Custom Formatters**
+
+   - Implement the Formatter interface
+   - Register with logger via WithFormatter option
+
+2. **Custom Log Senders**
+
+   - Implement the LogSender interface
+   - Pass directly to NewSync or NewAsync constructor
+
+3. **Configuration Options**
+   - Functional options pattern for all components
+   - Namespaced options prevent naming conflicts
+   - AsyncLogger-specific options for buffer and batch control
+
+## AsyncLogger Design Details
+
+### Buffer Management
+
+The AsyncLogger uses a Go channel as its internal buffer, which provides:
+
+- Thread-safe access from multiple goroutines
+- Efficient producer-consumer pattern
+- Blocking behavior when configured to do so
+
+### Batch Processing
+
+1. Worker goroutines consume entries from the buffer
+2. Entries are accumulated until one of:
+   - Batch size is reached
+   - Flush interval elapses
+   - Flush is explicitly called
+   - Logger is closed
+3. Batches are grouped by job name for efficient sending
+4. Each batch is formatted and sent via the client
+
+### Error Handling
+
+- Buffer full: Returns ErrBufferFull or blocks depending on configuration
+- Logger closed: Returns ErrShutdown
+- Send errors: Logged or dropped (no way to return to caller)
+- Format errors: Logged or dropped (no way to return to caller)
+
+### Concurrency Safety
+
+- WithContext/WithJob return new loggers that reference shared buffer
+- All loggers from a single NewAsync share worker pool and buffer
+- Close() is synchronized to prevent concurrent shutdown issues
+- Metadata is copied to avoid race conditions
+
+## Error Handling Strategy
+
+1. **Sentinel Errors**
+
+   - Predefined error values for specific failure types
+   - Helper functions for type checking (IsConnectionError, etc.)
+   - New AsyncLogger-specific errors like ErrBufferFull
+
+2. **Error Propagation**
+   - Synchronous logger: All errors returned to caller
+   - Asynchronous logger: Only buffer-full or closed errors returned to caller
+
+## Testing Strategy
+
+The package follows extensive test-driven development with:
+
+1. **Unit Tests**
+
+   - Component isolation through mocking
+   - Behavior verification with testify assertions
+   - Edge case coverage
+   - AsyncLogger-specific tests for buffering, batching, and worker behavior
+
+2. **Integration Tests**
+
+   - Example-based testing in examples/ directory
+   - Optionally connects to real Loki instance
+   - Verifies end-to-end flows
+
+3. **Performance Tests**
+   - Benchmarks for both synchronous and asynchronous loggers
+   - Measurement of throughput under load
+   - Memory allocation patterns
+
+## Performance Considerations
+
+1. **Synchronous Logger**
+
+   - Simple and direct, good for low-volume logging
+   - Each log call blocks until complete
+   - Network latency impacts application performance
+
+2. **Asynchronous Logger**
+   - Non-blocking for high-throughput scenarios
+   - Buffers messages to smooth out processing
+   - Batches requests for better network efficiency
+   - Minimal impact on application latency
+   - Consider memory usage when configuring buffer size

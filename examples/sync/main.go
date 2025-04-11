@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/mwazovzky/cloudlog"
-	"github.com/mwazovzky/cloudlog/delivery"
+	"github.com/mwazovzky/cloudlog/client"
 	"github.com/mwazovzky/cloudlog/formatter"
 )
 
@@ -30,7 +30,7 @@ func main() {
 	lokiUsername := getEnvOrDefault("LOKI_USERNAME", "")
 	lokiToken := getEnvOrDefault("LOKI_AUTH_TOKEN", "")
 
-	var syncLogger *cloudlog.Logger
+	var syncLogger cloudlog.Logger
 
 	if lokiURL != "" && lokiUsername != "" && lokiToken != "" {
 		// Create a new HTTP client with reasonable timeout
@@ -40,21 +40,20 @@ func main() {
 		// Create Loki client
 		client := cloudlog.NewClient(lokiURL, lokiUsername, lokiToken, httpClient)
 		fmt.Println("Sending logs to Loki instance at:", lokiURL)
-		// Create explicit sync logger
-		syncDeliverer := delivery.NewSyncDeliverer(client)
-		syncLogger = cloudlog.NewWithDeliverer(syncDeliverer, cloudlog.WithJob("sync-example-service"))
+		// Create sync logger
+		syncLogger = cloudlog.NewSync(client, cloudlog.WithJob("sync-example-service"))
 	} else {
 		// Create console output logger if Loki credentials aren't provided
 		fmt.Println("Loki credentials not provided, logging to console instead")
 		consoleClient := &consoleClient{}
-		// Create explicit sync logger
-		syncDeliverer := delivery.NewSyncDeliverer(consoleClient)
-		syncLogger = cloudlog.NewWithDeliverer(
-			syncDeliverer,
+		// Create sync logger
+		syncLogger = cloudlog.NewSync(
+			consoleClient,
 			cloudlog.WithJob("sync-example-service"),
 			cloudlog.WithFormatter(formatter.NewStringFormatter()),
 		)
 	}
+
 	err := syncLogger.Info("Application started", "version", "1.0.0")
 	if err != nil {
 		fmt.Println("Error logging to Loki:", err)
@@ -87,7 +86,7 @@ func main() {
 
 	// Console logging example
 	consoleClient := &consoleClient{}
-	consoleLogger := cloudlog.New(consoleClient,
+	consoleLogger := cloudlog.NewSync(consoleClient,
 		cloudlog.WithJob("console-example"),
 		cloudlog.WithFormatter(formatter.NewStringFormatter()),
 	)
@@ -105,7 +104,13 @@ func getEnvOrDefault(key, defaultValue string) string {
 // consoleClient implements the LogSender interface to print logs to console
 type consoleClient struct{}
 
-func (c *consoleClient) Send(_ string, formatted []byte) error {
-	fmt.Println(string(formatted))
+func (c *consoleClient) Send(entry client.LokiEntry) error {
+	for _, stream := range entry.Streams {
+		for _, value := range stream.Values {
+			if len(value) >= 2 {
+				fmt.Printf("[%s] %s\n", stream.Stream["job"], value[1])
+			}
+		}
+	}
 	return nil
 }
