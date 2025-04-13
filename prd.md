@@ -2,41 +2,48 @@
 
 ## Overview
 
-CloudLog is a structured logging library designed to provide efficient, flexible logging capabilities for Go applications, with native integration support for popular centralized logging systems like Grafana Loki.
+CloudLog is a structured logging library designed to seamlessly integrate with Grafana Loki and other log aggregation services. It provides key-value-based structured logging with context propagation, flexible formatting options, and both synchronous and asynchronous logging capabilities.
 
 ## Goals
 
-1. Provide a simple, consistent API for structured logging
-2. Support sending logs to Grafana Loki with minimal configuration
-3. Allow flexible log formatting options
-4. Enable context propagation in logs
-5. Offer strong testing utilities for applications using the library
-6. Maintain minimal external dependencies
+1. Provide a simple, consistent API for structured logging.
+2. Support Grafana Loki integration with minimal configuration.
+3. Enable flexible formatting options (JSON and human-readable).
+4. Implement efficient context propagation.
+5. Offer both blocking and non-blocking logging implementations.
+6. Ensure robust error handling and reporting.
+7. Keep external dependencies to a minimum.
 
 ## Non-Goals
 
-1. Supporting every possible logging backend (focus on Loki first)
-2. Implementing complex log routing or filtering
-3. Replacing enterprise-grade logging systems
+1. Supporting every possible logging backend (focusing on Loki)
+2. Implementing complex log aggregation or analysis features
+3. Managing log storage or retrieval mechanisms
 
 ## User Personas
 
 ### Application Developer
 
-- Needs to add structured logging to their application
-- Wants a simple API with minimal setup
-- Prefers Go-idiomatic interfaces
+- Needs clean, simple logging API
+- Wants type-safe structured logging
+- Prefers minimal configuration
 
 ### DevOps Engineer
 
-- Needs to centralize logs in Grafana Loki
-- Wants to configure logging parameters
-- Needs to match log format with existing systems
+- Needs central log aggregation
+- Wants configurable log fields and formats
+- Requires proper labeling for efficient querying
+
+### High-Traffic Service Owner
+
+- Needs non-blocking logging to maintain performance
+- Wants batch processing for efficiency
+- Requires graceful handling of high log volumes
 
 ### QA Engineer
 
-- Needs to verify that logs contain expected information
-- Wants to test logging behavior in automated tests
+- Needs predictable log outputs
+- Wants to verify logging in tests
 
 ## Requirements
 
@@ -44,74 +51,76 @@ CloudLog is a structured logging library designed to provide efficient, flexible
 
 1. **Structured Logging**
 
-   - Support key-value pair logging
-   - Support common log levels (info, error, debug, warn)
-   - Include timestamps in logs
+   - Support multiple log levels (info, error, debug, warn)
+   - Enable key-value pair logging
+   - Allow timestamp format customization
 
 2. **Loki Integration**
 
-   - Send logs to Grafana Loki using the proper streams format
+   - Implement proper Loki push API protocol
    - Support authentication
-   - Handle connection failures gracefully
-   - Format payload according to Loki's API requirements
-   - Include appropriate timestamps and labels
+   - Enable stream labeling
+   - Provide nanosecond timestamp precision
 
 3. **Formatting**
 
-   - Support JSON formatting
-   - Support human-readable formatting
-   - Allow customization of field names and formats
+   - Support JSON formatting for machine consumption
+   - Support human-readable string formatting for console output
+   - Allow field name customization
 
-4. **Context**
+4. **Context & Metadata**
 
-   - Allow adding context to logger instances
-   - Propagate context in all subsequent logs
-   - Support job/source identification
+   - Support context propagation across logger instances
+   - Enable additional metadata for all logs
+   - Provide job/service identification
 
-5. **Testing**
+5. **Synchronous Logging**
 
-   - Provide utilities for capturing and validating logs
-   - Support searching logs by level, message, and fields
+   - Implement blocking behavior for simple use cases
+   - Return per-log errors for immediate handling
 
-6. **Asynchronous and Batch Logging**:
+6. **Asynchronous Logging**
 
-   - Support asynchronous logging to prevent blocking operations.
-   - Provide batch logging with configurable batch size and flush intervals.
-   - Handle buffer overflow errors gracefully.
+   - Implement non-blocking behavior for high-throughput scenarios
+   - Use a buffered queue for log entries
+   - Support configurable batching for efficient processing
+   - Use worker goroutines to process logs in the background
+   - Handle flush markers to ensure all logs are processed during flush or shutdown
 
-7. **Graceful Shutdown**:
-
-   - Ensure all logs are flushed and resources are cleaned up during application shutdown.
+7. **Error Handling**
+   - Return typed errors for specific failure scenarios
+   - Provide specific errors for buffer full and shutdown scenarios
 
 ### Non-Functional Requirements
 
 1. **Performance**
 
-   - Minimal CPU and memory overhead
-   - Efficient log serialization
-   - Non-blocking logging operations
+   - Minimize allocations
+   - Optimize serialization
+   - Batch processing for high volumes
+   - Non-blocking API option
 
 2. **Reliability**
 
-   - Graceful error handling
-   - No panics in production code
-   - Proper resource cleanup
+   - No runtime panics
+   - Clean closure of resources
+   - Buffer overflow protection
 
 3. **Usability**
 
-   - Clear, consistent API
+   - Intuitive API design
    - Comprehensive documentation
-   - Useful examples
+   - Clear examples for both sync and async use cases
 
 4. **Extensibility**
-   - Allow custom formatters
-   - Support for additional log senders
-   - Pluggable architecture
+   - Support custom formatters
+   - Enable custom log senders
+   - Allow flexible configuration
 
 ## Success Metrics
 
-1. Clean API with minimal boilerplate for common operations
-2. Successful integration with Grafana Loki using the correct payload format
-3. Comprehensive test coverage (>80%)
-4. Complete documentation with examples
-5. No runtime panics or resource leaks
+1. 99.9% successful log delivery to Loki
+2. > 85% code coverage in tests
+3. Minimal overhead (<1ms per log entry for sync, <0.1ms for async)
+4. Clear and consistent error reporting
+5. Zero impact on application performance in async mode

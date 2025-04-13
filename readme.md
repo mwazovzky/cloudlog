@@ -1,19 +1,23 @@
+![Tests](https://github.com/mwazovzky/cloudlog/actions/workflows/test.yml/badge.svg)
+
 # CloudLog - Structured Logging for Go
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/mwazovzky/cloudlog)](https://goreportcard.com/report/github.com/mwazovzky/cloudlog)
 [![GoDoc](https://godoc.org/github.com/mwazovzky/cloudlog?status.svg)](https://godoc.org/github.com/mwazovzky/cloudlog)
 
-CloudLog is a structured logging library designed for sending logs to Grafana Loki and other logging backends. It provides a clean, simple interface for logging structured data with key-value pairs and customizable formatting.
+CloudLog is a structured logging library for Go applications that provides seamless integration with Grafana Loki and other logging backends.
 
 ## Features
 
-- **Structured Logging**: Key-value pair logging with support for all data types
-- **Multiple Log Levels**: Info, Error, Debug, and Warn levels
-- **Context Propagation**: Add context to loggers that gets included in all messages
-- **Custom Formatters**: JSON and human-readable string formats built-in
-- **Loki Integration**: Native support for Grafana Loki with proper streams protocol
-- **Error Handling**: Type-based error handling with useful categorization
-- **Testing Utilities**: Comprehensive tools for testing logging behavior
+- **Structured Logging**: Type-safe key-value pair logging
+- **Multiple Log Levels**: Info, Error, Debug, and Warn
+- **Context Propagation**: Attach persistent metadata to loggers
+- **Flexible Formatting**: JSON, human-readable string, and Loki protocol
+- **Grafana Loki Integration**: Native protocol support with proper labeling
+- **Synchronous & Asynchronous Modes**: Block or non-block as needed
+- **Batched Logging**: High-throughput with configurable batching
+- **Error Handling**: Typed errors with helpful checking functions
+- **Minimal Dependencies**: Only relies on the standard library and testify for tests
 
 ## Installation
 
@@ -23,179 +27,146 @@ go get github.com/mwazovzky/cloudlog
 
 ## Quick Start
 
+### Synchronous Logging (Simple Use Cases)
+
 ```go
 package main
 
 import (
-	"github.com/mwazovzky/cloudlog"
+	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/mwazovzky/cloudlog"
 )
 
 func main() {
-	// Create Loki client
+	// Create HTTP client with timeout
 	httpClient := &http.Client{Timeout: 5 * time.Second}
+
+	// Create Loki client
 	client := cloudlog.NewClient(
-		"http://loki-instance/api/v1/push",
+		"http://loki:3100/loki/api/v1/push",
 		"username",
 		"token",
 		httpClient,
 	)
 
-	// Create logger
-	logger := cloudlog.New(client)
+	// Create synchronous logger
+	logger := cloudlog.NewSync(
+		client,
+		cloudlog.WithJob("user-service"),
+	)
 
-	// Basic logging
-	logger.Info("Application started", "version", "1.0.0")
-
-	// With context
-	reqLogger := logger.WithContext("request_id", "abc-123")
-	reqLogger.Info("Request received", "method", "GET", "path", "/users")
-
-	// Different log levels
-	reqLogger.Debug("Processing request", "params", "limit=100")
-	reqLogger.Warn("High latency detected", "latency_ms", 250)
-	reqLogger.Error("Request failed", "status", 500, "error", "database connection lost")
+	// Log structured data - blocks until sent
+	if err := logger.Info("Service started",
+		"version", "1.2.0",
+		"env", "production",
+	); err != nil {
+		fmt.Println("Failed to log:", err)
+	}
 }
 ```
 
-## Package Structure
-
-- **cloudlog** (root): Convenience functions and type aliases
-- **client**: Log-sending implementations (LokiClient)
-- **logger**: Core logging functionality
-- **formatter**: Log formatting options (JSON, string)
-- **errors**: Error types and handling utilities
-- **testing**: Testing utilities
-
-## Advanced Usage
-
-### Custom Formatters
+### Asynchronous Logging (High Volume)
 
 ```go
-// JSON formatter with custom options
-jsonFormatter := formatter.NewJSONFormatter(
-    formatter.WithTimeFormat(time.RFC1123),
-    formatter.WithTimestampField("@timestamp"),
+// Create asynchronous logger for high-throughput scenarios
+asyncLogger := cloudlog.NewAsync(
+	client,
+	cloudlog.WithJob("api-service"),
+	cloudlog.WithBufferSize(10000),        // Buffer up to 10,000 log entries
+	cloudlog.WithBatchSize(100),           // Send in batches of 100
+	cloudlog.WithFlushInterval(1*time.Second), // Flush at least every second
+	cloudlog.WithWorkers(4),               // Use 4 worker goroutines
 )
 
-// Human-readable formatter
-stringFormatter := formatter.NewStringFormatter(
-    formatter.WithKeyValueSeparator(": "),
-    formatter.WithPairSeparator(" | "),
+// Non-blocking log calls
+asyncLogger.Info("Request processed",
+	"path", "/api/users",
+	"method", "GET",
+	"status", 200,
+	"duration_ms", 45,
 )
 
-logger := cloudlog.New(client, cloudlog.WithFormatter(stringFormatter))
+// Before application exit, ensure logs are sent
+asyncLogger.Flush()  // Wait for all buffered logs to be sent
+asyncLogger.Close()  // Release resources
 ```
 
-### Context and Job Names
+## Context Propagation
 
 ```go
-// Add context to logs
+// Create context-specific logger
 userLogger := logger.WithContext(
-    "user_id", "user-123",
-    "session_id", "sess-456",
+	"user_id", "user-123",
+	"session_id", "abc-xyz",
 )
 
-// Change job/source name
-apiLogger := logger.WithJob("api-service")
+// Each log includes the context automatically
+userLogger.Info("User authenticated", "method", "oauth")
+userLogger.Warn("Password expiring", "days_left", 5)
 ```
 
-### Error Handling
+## Custom Formatting
 
 ```go
-err := logger.Info("Test message")
+// String formatter for console output
+stringFormatter := cloudlog.NewStringFormatter(
+	cloudlog.WithStringTimeFormat("2006-01-02 15:04:05"),
+	cloudlog.WithKeyValueSeparator(": "),
+	cloudlog.WithPairSeparator(" | "),
+)
+
+// Configure logger with formatter
+logger := cloudlog.NewSync(
+	consoleClient,
+	cloudlog.WithJob("api"),
+	cloudlog.WithFormatter(stringFormatter),
+)
+```
+
+## Error Handling
+
+All logging methods return errors that can be checked with helper functions:
+
+```go
+err := logger.Info("Operation complete")
 if err != nil {
-    if cloudlog.IsConnectionError(err) {
-        // Handle connection error
-    } else if cloudlog.IsFormatError(err) {
-        // Handle formatting error
-    }
+	switch {
+	case cloudlog.IsConnectionError(err):
+		// Handle connection failure (retry, fallback, etc.)
+	case cloudlog.IsFormatError(err):
+		// Handle formatting error
+	case cloudlog.IsBufferFullError(err):
+		// Handle buffer full situation (async logger)
+	default:
+		// Handle other errors
+	}
 }
 ```
 
-### Testing
+## AsyncLogger Configuration
 
-```go
-func TestFunction(t *testing.T) {
-    // Create test logger
-    testLogger := testing.NewTestLogger()
-    logger := cloudlog.New(testLogger)
+| Option                        | Description                             | Default |
+| ----------------------------- | --------------------------------------- | ------- |
+| `WithBufferSize(size)`        | Maximum number of log entries in buffer | 1000    |
+| `WithBatchSize(size)`         | Number of logs to send in each batch    | 100     |
+| `WithFlushInterval(duration)` | Maximum time between flushes            | 5s      |
+| `WithWorkers(count)`          | Number of worker goroutines             | 2       |
+| `WithBlockOnFull(bool)`       | Whether to block when buffer is full    | false   |
 
-    // Run function that logs
-    functionUnderTest(logger)
+## Documentation
 
-    // Verify logs
-    if !testLogger.ContainsMessage("Operation completed") {
-        t.Error("Expected log message not found")
-    }
-
-    errorLogs := testLogger.LogsOfLevel("error")
-    if len(errorLogs) > 0 {
-        t.Error("Function logged unexpected errors")
-    }
-}
-```
-
-### Asynchronous and Batch Logging
-
-```go
-// Asynchronous logging
-asyncLogger := cloudlog.NewAsync(client, cloudlog.WithJob("async-logger"))
-asyncLogger.Info("Async log message")
-
-// Batch logging
-batchConfig := cloudlog.DefaultDeliveryConfig()
-batchConfig.BatchSize = 3
-batchLogger := cloudlog.NewBatchLoggerWithConfig(client, batchConfig)
-batchLogger.Info("Batch log message")
-
-// Ensure logs are flushed before shutdown
-asyncLogger.Flush()
-batchLogger.Flush()
-```
+For complete documentation, visit [GoDoc](https://godoc.org/github.com/mwazovzky/cloudlog).
 
 ## Examples
 
-For complete examples, see the [examples directory](./examples).
-
-## Configuration
-
-CloudLog can be configured through environment variables or code:
-
-```go
-// With options
-logger := cloudlog.New(client,
-    cloudlog.WithJob("my-service"),
-    cloudlog.WithMetadata("environment", "production"),
-)
-```
-
-## Loki Protocol Support
-
-CloudLog's Loki client implements the Loki push API protocol properly:
-
-```go
-// The client automatically formats logs into the required Loki format:
-{
-  "streams": [
-    {
-      "stream": {
-        "job": "your-service-name"
-      },
-      "values": [
-        ["1626882892000000000", "{\"level\":\"info\",\"message\":\"your log message\",\"key\":\"value\"}"]
-      ]
-    }
-  ]
-}
-```
-
-This ensures logs are correctly ingested by Grafana Loki.
+For more examples, check the [examples directory](https://github.com/mwazovzky/cloudlog/tree/main/examples).
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please ensure tests pass with `go test ./...` before submitting a pull request.
 
 ## License
 
