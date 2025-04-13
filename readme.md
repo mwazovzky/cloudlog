@@ -1,3 +1,5 @@
+![Tests](https://github.com/mwazovzky/cloudlog/actions/workflows/test.yml/badge.svg)
+
 # CloudLog - Structured Logging for Go
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/mwazovzky/cloudlog)](https://goreportcard.com/report/github.com/mwazovzky/cloudlog)

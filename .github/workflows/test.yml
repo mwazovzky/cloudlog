@@ -1,0 +1,48 @@
+name: tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.23"
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Run Tests
+        run: go test -v ./...
+
+      # Create an output that can be used by other workflows
+      - name: Set test outcome
+        if: always()
+        run: echo "TEST_OUTCOME=${{ job.status }}" >> $GITHUB_ENV
+
+      # Store test results for other workflows to check
+      - name: Save test status
+        if: always()
+        run: echo "${{ job.status }}" > test-status.txt
+
+      - name: Upload test status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-status
+          path: test-status.txt
