@@ -9,39 +9,31 @@ CloudLog is a Go structured logging library for Grafana Loki integration. Module
 ## Commands
 
 ```bash
-# Run all tests
-go test ./...
-
-# Run tests for a specific package
-go test ./logger/
-go test ./formatter/
-go test ./client/
-
-# Run a single test
-go test -run TestFunctionName ./package/
-
-# Run tests with race detection and coverage (excludes examples/)
-./coverage.sh
+go test ./...                              # Run all tests
+go test ./logger/                          # Run tests for a specific package
+go test -run TestFunctionName ./package/   # Run a single test
+./coverage.sh                              # Race detection + coverage
 ```
 
 ## Architecture
 
-The root package (`cloudlog.go`) is a **facade** that re-exports types and constructors from internal packages. Users import only `github.com/mwazovzky/cloudlog`.
+The root package (`cloudlog.go`) is a **facade** re-exporting from internal packages.
 
 ### Core packages
 
-- **`logger/`** — `Logger` interface and `SyncLogger` implementation. Blocks until each log entry is sent.
-- **`formatter/`** — `Formatter` interface with `LokiFormatter` (JSON, default) and `StringFormatter` (human-readable, for development).
-- **`client/`** — `LogSender` interface and `LokiClient`. Sends `LokiEntry` structs as JSON to Loki's HTTP push API with basic auth.
-- **`errors/`** — Sentinel errors (`ErrInvalidFormat`, `ErrConnectionFailed`, `ErrResponseError`) with `Is*` helpers.
+- **`logger/`** — `Logger` interface and `SyncLogger`. Log methods accept `context.Context` as first arg.
+- **`formatter/`** — `Formatter` interface returns `[]byte`. `LokiFormatter` (JSON) and `StringFormatter` (human-readable).
+- **`client/`** — `LogSender` interface and `LokiClient`. Sends `LokiEntry` to Loki's HTTP push API. `Send` accepts `context.Context`.
+- **`errors/`** — Sentinel errors with `Is*` helpers.
 
 ### Data flow
 
-`Logger.Info(msg, keyvals...)` → `formatter.Format(LogEntry)` → `client.Send(LokiEntry)` → HTTP POST to Loki
+`Logger.Info(ctx, msg, kv...)` → `formatter.Format(LogEntry) → []byte` → logger builds `LokiEntry` with labels → `client.Send(ctx, LokiEntry)` → HTTP POST
 
-### Public API (via facade)
+### Public API
 
 - **Constructors:** `NewSync`, `NewClient`, `NewLokiFormatter`
-- **Logger options:** `WithJob`, `WithMetadata`, `WithFormatter`
-- **Formatter options:** `WithLabelKeys`, `WithTimeFormat`
+- **Logger options:** `WithJob`, `WithMetadata`, `WithFormatter`, `WithLabelKeys`, `WithMinLevel`
+- **Formatter options:** `WithTimeFormat`
 - **Error helpers:** `IsFormatError`, `IsConnectionError`, `IsResponseError`
+- **Level constants:** `LevelDebug`, `LevelInfo`, `LevelWarn`, `LevelError`

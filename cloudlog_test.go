@@ -1,6 +1,7 @@
 package cloudlog
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var ctx = context.Background()
+
 // MockClient is a mock client implementation for testing
 type MockClient struct {
 	LastJob       string
@@ -21,8 +24,7 @@ type MockClient struct {
 	ShouldError   bool
 }
 
-// Send is the unified method implementing the LogSender interface
-func (m *MockClient) Send(entry client.LokiEntry) error {
+func (m *MockClient) Send(_ context.Context, entry client.LokiEntry) error {
 	if m.ShouldError {
 		return fmt.Errorf("%w: mock error", errors.ErrConnectionFailed)
 	}
@@ -38,18 +40,15 @@ func (m *MockClient) Send(entry client.LokiEntry) error {
 }
 
 func TestNewClient(t *testing.T) {
-	client := NewClient("http://test", "user", "token", &http.Client{})
-
-	if client == nil {
-		t.Error("Expected non-nil client")
-	}
+	c := NewClient("http://test", "user", "token", &http.Client{})
+	assert.NotNil(t, c)
 }
 
 func TestCloudLog_Info(t *testing.T) {
 	mockClient := &MockClient{}
 	logger := NewSync(mockClient)
 
-	err := logger.Info("Test message", "key1", "value1", "key2", 42)
+	err := logger.Info(ctx, "Test message", "key1", "value1", "key2", 42)
 	assert.NoError(t, err)
 
 	require.NotNil(t, mockClient.LastFormatted)
@@ -69,7 +68,7 @@ func TestWithFormatter(t *testing.T) {
 	stringFormatter := formatter.NewStringFormatter()
 	logger := NewSync(mockClient, WithFormatter(stringFormatter))
 
-	err := logger.Info("Test message", "key1", "value1")
+	err := logger.Info(ctx, "Test message", "key1", "value1")
 	assert.NoError(t, err)
 
 	output := string(mockClient.LastFormatted)
@@ -84,7 +83,7 @@ func TestWithJob(t *testing.T) {
 	mockClient := &MockClient{}
 	logger := NewSync(mockClient, WithJob("custom-job"))
 
-	err := logger.Info("Test message")
+	err := logger.Info(ctx, "Test message")
 	assert.NoError(t, err)
 
 	assert.Equal(t, "custom-job", mockClient.LastJob)
@@ -94,7 +93,7 @@ func TestWithMetadata(t *testing.T) {
 	mockClient := &MockClient{}
 	logger := NewSync(mockClient, WithMetadata("version", "1.0"))
 
-	err := logger.Info("Test message")
+	err := logger.Info(ctx, "Test message")
 	assert.NoError(t, err)
 
 	require.NotNil(t, mockClient.LastFormatted)
@@ -106,13 +105,13 @@ func TestWithMetadata(t *testing.T) {
 	assert.Equal(t, "1.0", logData["version"])
 }
 
-func TestWithContext(t *testing.T) {
+func TestWith(t *testing.T) {
 	mockClient := &MockClient{}
 	logger := NewSync(mockClient)
 
-	contextLogger := logger.WithContext("user_id", "123", "request_id", "req-456")
+	userLogger := logger.With("user_id", "123", "request_id", "req-456")
 
-	err := contextLogger.Info("User action")
+	err := userLogger.Info(ctx, "User action")
 	assert.NoError(t, err)
 
 	require.NotNil(t, mockClient.LastFormatted)
@@ -133,11 +132,10 @@ func TestLoggerChaining(t *testing.T) {
 		WithJob("base-service"),
 		WithMetadata("version", "1.0"))
 
-	contextLogger := logger.WithContext("context_key", "context_value")
+	userLogger := logger.With("context_key", "context_value")
+	jobLogger := userLogger.WithJob("specific-job")
 
-	jobLogger := contextLogger.WithJob("specific-job")
-
-	err := jobLogger.Info("Chained logger test")
+	err := jobLogger.Info(ctx, "Chained logger test")
 	assert.NoError(t, err)
 
 	assert.Equal(t, "specific-job", mockClient.LastJob)
@@ -157,32 +155,9 @@ func TestErrorHandling(t *testing.T) {
 	mockClient := &MockClient{ShouldError: true}
 	logger := NewSync(mockClient)
 
-	err := logger.Info("Test info")
+	err := logger.Info(ctx, "Test info")
 	assert.Error(t, err)
 	assert.True(t, IsConnectionError(err))
-
-	err = logger.Error("Test error")
-	assert.Error(t, err)
-	assert.True(t, IsConnectionError(err))
-
-	err = logger.Debug("Test debug")
-	assert.Error(t, err)
-	assert.True(t, IsConnectionError(err))
-
-	err = logger.Warn("Test warn")
-	assert.Error(t, err)
-	assert.True(t, IsConnectionError(err))
-}
-
-func TestFlushAndClose(t *testing.T) {
-	mockClient := &MockClient{}
-	logger := NewSync(mockClient)
-
-	err := logger.Flush()
-	assert.NoError(t, err)
-
-	err = logger.Close()
-	assert.NoError(t, err)
 }
 
 func TestFormatterOptions(t *testing.T) {
@@ -192,10 +167,6 @@ func TestFormatterOptions(t *testing.T) {
 }
 
 func TestHttpClientOptions(t *testing.T) {
-	httpClient := &http.Client{}
-
-	client := NewClient("http://example.com", "user", "token", httpClient)
-	assert.NotNil(t, client)
+	c := NewClient("http://example.com", "user", "token", &http.Client{})
+	assert.NotNil(t, c)
 }
-
-

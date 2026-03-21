@@ -1,128 +1,121 @@
 package logger
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
-	"github.com/mwazovzky/cloudlog/formatter"
 	"github.com/stretchr/testify/assert"
 )
+
+var ctx = context.Background()
 
 func TestSyncLogger_Info(t *testing.T) {
 	sender := &mockSender{}
 	logger := NewSync(sender).(*SyncLogger)
 
-	err := logger.Info("test message", "key1", "value1")
+	err := logger.Info(ctx, "test message", "key1", "value1")
 	assert.NoError(t, err)
 	assert.Len(t, sender.messages, 1)
 
-	// Parse the JSON log message
 	var logData map[string]interface{}
 	err = json.Unmarshal([]byte(sender.messages[0]), &logData)
-	assert.NoError(t, err, "Should be able to parse log content as JSON")
+	assert.NoError(t, err)
 
-	// Verify contents
 	assert.Equal(t, "test message", logData["message"])
 	assert.Equal(t, "value1", logData["key1"])
 	assert.Equal(t, "info", logData["level"])
 	assert.Equal(t, "application", logData["job"])
 }
 
-func TestSyncLogger_WithContext(t *testing.T) {
+func TestSyncLogger_With(t *testing.T) {
 	sender := &mockSender{}
-	logger := NewSync(sender).(*SyncLogger)
+	logger := NewSync(sender)
 
-	loggerWithCtx := logger.WithContext("key1", "value1").(*SyncLogger)
-	err := loggerWithCtx.Info("test message")
+	loggerWithMeta := logger.With("key1", "value1")
+	err := loggerWithMeta.Info(ctx, "test message")
 	assert.NoError(t, err)
 	assert.Len(t, sender.messages, 1)
 
-	// Parse the JSON log message
 	var logData map[string]interface{}
 	err = json.Unmarshal([]byte(sender.messages[0]), &logData)
-	assert.NoError(t, err, "Should be able to parse log content as JSON")
+	assert.NoError(t, err)
 
-	// Verify context was included
 	assert.Equal(t, "value1", logData["key1"])
 }
 
 func TestSyncLogger_WithJob(t *testing.T) {
 	sender := &mockSender{}
-	logger := NewSync(sender).(*SyncLogger)
+	logger := NewSync(sender)
 
-	loggerWithJob := logger.WithJob("new-job").(*SyncLogger)
-	err := loggerWithJob.Info("test message")
+	loggerWithJob := logger.WithJob("new-job")
+	err := loggerWithJob.Info(ctx, "test message")
 	assert.NoError(t, err)
 	assert.Len(t, sender.messages, 1)
 
-	// Verify the job name in the sender's recorded jobs
 	assert.Equal(t, "new-job", sender.jobs[0])
 
-	// Parse the JSON log message
 	var logData map[string]interface{}
 	err = json.Unmarshal([]byte(sender.messages[0]), &logData)
-	assert.NoError(t, err, "Should be able to parse log content as JSON")
+	assert.NoError(t, err)
 
-	// Verify job is in the log content
 	assert.Equal(t, "new-job", logData["job"])
 }
 
 func TestSyncLogger_AllLogLevels(t *testing.T) {
 	sender := &mockSender{}
-	logger := NewSync(sender).(*SyncLogger)
+	logger := NewSync(sender)
 
-	// Test all log methods
-	err := logger.Info("info message")
-	assert.NoError(t, err)
-
-	err = logger.Error("error message")
-	assert.NoError(t, err)
-
-	err = logger.Debug("debug message")
-	assert.NoError(t, err)
-
-	err = logger.Warn("warn message")
-	assert.NoError(t, err)
-
+	assert.NoError(t, logger.Info(ctx, "info message"))
+	assert.NoError(t, logger.Error(ctx, "error message"))
+	assert.NoError(t, logger.Debug(ctx, "debug message"))
+	assert.NoError(t, logger.Warn(ctx, "warn message"))
 	assert.Len(t, sender.messages, 4)
 
-	// Verify each log level
 	levels := []string{"info", "error", "debug", "warn"}
 	for i, level := range levels {
 		var logData map[string]interface{}
-		err = json.Unmarshal([]byte(sender.messages[i]), &logData)
-		assert.NoError(t, err, "Should be able to parse log content as JSON")
+		err := json.Unmarshal([]byte(sender.messages[i]), &logData)
+		assert.NoError(t, err)
 		assert.Equal(t, level, logData["level"])
 	}
-}
-
-func TestSyncLogger_CloseAndFlush(t *testing.T) {
-	sender := &mockSender{} // Use the shared mockSender from test_utils.go
-	logger := NewSync(sender).(*SyncLogger)
-
-	// Test Close - it's a no-op but should return nil
-	err := logger.Close()
-	assert.NoError(t, err)
-
-	// Test Flush - also a no-op but should return nil
-	err = logger.Flush()
-	assert.NoError(t, err)
 }
 
 func TestSyncLoggerOptions(t *testing.T) {
 	sender := &mockSender{}
 
-	// Test WithFormatter
-	customFormatter := formatter.NewStringFormatter()
-	logger := NewSync(sender, WithFormatter(customFormatter)).(*SyncLogger)
-	assert.Equal(t, customFormatter, logger.formatter)
-
 	// Test WithJob functional option
-	jobName := "test-job"
-	logger = NewSync(sender, WithJob(jobName)).(*SyncLogger)
-	assert.Equal(t, jobName, logger.job)
+	logger := NewSync(sender, WithJob("test-job")).(*SyncLogger)
+	assert.Equal(t, "test-job", logger.job)
 
 	// Test WithMetadata
 	logger = NewSync(sender, WithMetadata("key1", "value1")).(*SyncLogger)
 	assert.Equal(t, "value1", logger.metadata["key1"])
+}
+
+func TestSyncLogger_MinLevel(t *testing.T) {
+	sender := &mockSender{}
+	logger := NewSync(sender, WithMinLevel(LevelWarn))
+
+	assert.NoError(t, logger.Debug(ctx, "debug"))
+	assert.NoError(t, logger.Info(ctx, "info"))
+	assert.NoError(t, logger.Warn(ctx, "warn"))
+	assert.NoError(t, logger.Error(ctx, "error"))
+
+	assert.Len(t, sender.messages, 2) // only warn and error
+}
+
+func TestSyncLogger_LabelKeys(t *testing.T) {
+	sender := &mockSender{}
+	logger := NewSync(sender, WithLabelKeys("user_id"))
+
+	err := logger.Info(ctx, "test", "user_id", "123", "other", "val")
+	assert.NoError(t, err)
+
+	// Verify user_id is NOT in log content (promoted to label)
+	var logData map[string]interface{}
+	err = json.Unmarshal([]byte(sender.messages[0]), &logData)
+	assert.NoError(t, err)
+	assert.Nil(t, logData["user_id"])
+	assert.Equal(t, "val", logData["other"])
 }

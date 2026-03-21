@@ -5,17 +5,16 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/mwazovzky/cloudlog)](https://goreportcard.com/report/github.com/mwazovzky/cloudlog)
 [![GoDoc](https://godoc.org/github.com/mwazovzky/cloudlog?status.svg)](https://godoc.org/github.com/mwazovzky/cloudlog)
 
-CloudLog is a structured logging library for Go applications that provides seamless integration with Grafana Loki and other logging backends.
+CloudLog is a structured logging library for Go applications with Grafana Loki integration.
 
 ## Features
 
-- **Structured Logging**: Type-safe key-value pair logging
-- **Multiple Log Levels**: Info, Error, Debug, and Warn
-- **Context Propagation**: Attach persistent metadata to loggers
-- **Flexible Formatting**: JSON, human-readable string, and Loki protocol
-- **Grafana Loki Integration**: Native protocol support with proper labeling
-- **Error Handling**: Typed errors with helpful checking functions
-- **Minimal Dependencies**: Only relies on the standard library and testify for tests
+- **Structured Logging**: Key-value pair logging with `context.Context` support
+- **Multiple Log Levels**: Info, Error, Debug, Warn with level filtering
+- **Metadata Propagation**: Attach persistent metadata to loggers
+- **Grafana Loki Integration**: Native protocol support with label promotion
+- **Error Handling**: Typed sentinel errors with helper functions
+- **Minimal Dependencies**: Standard library + testify for tests
 
 ## Installation
 
@@ -25,12 +24,11 @@ go get github.com/mwazovzky/cloudlog
 
 ## Quick Start
 
-### Basic Usage
-
 ```go
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -39,25 +37,17 @@ import (
 )
 
 func main() {
-	// Create HTTP client with timeout
-	httpClient := &http.Client{Timeout: 5 * time.Second}
+	ctx := context.Background()
 
-	// Create Loki client
+	httpClient := &http.Client{Timeout: 5 * time.Second}
 	client := cloudlog.NewClient(
 		"http://loki:3100/loki/api/v1/push",
-		"username",
-		"token",
-		httpClient,
+		"username", "token", httpClient,
 	)
 
-	// Create synchronous logger
-	logger := cloudlog.NewSync(
-		client,
-		cloudlog.WithJob("user-service"),
-	)
+	logger := cloudlog.NewSync(client, cloudlog.WithJob("user-service"))
 
-	// Log structured data - blocks until sent
-	if err := logger.Info("Service started",
+	if err := logger.Info(ctx, "Service started",
 		"version", "1.2.0",
 		"env", "production",
 	); err != nil {
@@ -66,83 +56,59 @@ func main() {
 }
 ```
 
-## Context Propagation
+## Metadata
 
 ```go
-// Create context-specific logger
-userLogger := logger.WithContext(
-	"user_id", "user-123",
-	"session_id", "abc-xyz",
-)
+// Add persistent metadata
+userLogger := logger.With("user_id", "user-123", "session_id", "abc-xyz")
 
-// Each log includes the context automatically
-userLogger.Info("User authenticated", "method", "oauth")
-userLogger.Warn("Password expiring", "days_left", 5)
+userLogger.Info(ctx, "User authenticated", "method", "oauth")
+userLogger.Warn(ctx, "Password expiring", "days_left", 5)
 ```
 
-## Custom Formatting
+## Loki Labels
+
+Promote keys to Loki stream labels (removes them from log content):
 
 ```go
-// String formatter for console output
-stringFormatter := cloudlog.NewStringFormatter(
-	cloudlog.WithStringTimeFormat("2006-01-02 15:04:05"),
-	cloudlog.WithKeyValueSeparator(": "),
-	cloudlog.WithPairSeparator(" | "),
+logger := cloudlog.NewSync(client,
+	cloudlog.WithJob("api-service"),
+	cloudlog.WithLabelKeys("request_id", "user_id"),
 )
+```
 
-// Configure logger with formatter
-logger := cloudlog.NewSync(
-	consoleClient,
-	cloudlog.WithJob("api"),
-	cloudlog.WithFormatter(stringFormatter),
+## Level Filtering
+
+```go
+logger := cloudlog.NewSync(client,
+	cloudlog.WithMinLevel(cloudlog.LevelWarn), // only Warn and Error
 )
 ```
 
 ## Error Handling
 
-All logging methods return errors that can be checked with helper functions:
-
 ```go
-err := logger.Info("Operation complete")
+err := logger.Info(ctx, "Operation complete")
 if err != nil {
 	switch {
 	case cloudlog.IsConnectionError(err):
-		// Handle connection failure (retry, fallback, etc.)
+		// Handle connection failure
 	case cloudlog.IsFormatError(err):
 		// Handle formatting error
-	default:
-		// Handle other errors
 	}
 }
 ```
 
-## Logger Configuration Options
+## Configuration Options
 
-### StringFormatter Options
-
-| Option                         | Description                                |
-| ------------------------------ | ------------------------------------------ |
-| `WithStringTimeFormat(format)` | Sets the time format for string formatter  |
-| `WithKeyValueSeparator(sep)`   | Sets the separator between keys and values |
-| `WithPairSeparator(sep)`       | Sets the separator between key-value pairs |
-
-### LokiFormatter Options
-
-| Option                      | Description                                          |
-| --------------------------- | ---------------------------------------------------- |
-| `WithLabelKeys(keys...)`    | Specifies keys to use as labels in Loki formatter    |
-| `WithTimeFormat(format)`    | Sets the time format for Loki formatter              |
-| `WithTimestampField(field)` | Sets the field name for timestamps in Loki formatter |
-| `WithLevelField(field)`     | Sets the field name for log levels in Loki formatter |
-| `WithJobField(field)`       | Sets the field name for job in Loki formatter        |
-
-### SyncLogger Configuration
-
-| Option                     | Description                              |
-| -------------------------- | ---------------------------------------- |
-| `WithJob(job)`             | Sets the default job name for the logger |
-| `WithMetadata(key, value)` | Adds default metadata to all log entries |
-| `WithFormatter(formatter)` | Sets a custom formatter for the logger   |
+| Option                     | Description                                    |
+| -------------------------- | ---------------------------------------------- |
+| `WithJob(job)`             | Sets the job name (Loki stream label)          |
+| `WithMetadata(key, value)` | Adds default metadata to all log entries       |
+| `WithFormatter(formatter)` | Sets a custom formatter                        |
+| `WithLabelKeys(keys...)`   | Promotes keys to Loki stream labels            |
+| `WithMinLevel(level)`      | Sets minimum log level                         |
+| `WithTimeFormat(format)`   | Sets timestamp format (LokiFormatter option)   |
 
 ## Documentation
 

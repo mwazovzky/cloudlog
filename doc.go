@@ -1,18 +1,16 @@
 /*
-Package cloudlog provides a structured logging system designed for integration with Grafana Loki
-and other logging backends. It features key-value pair logging, context propagation, and
-flexible formatting options.
+Package cloudlog provides a structured logging system designed for integration with Grafana Loki.
+It features key-value pair logging, context propagation, and flexible formatting options.
 
 # Key Components
 
 1. Logger: Interface that defines logging operations (Info, Error, Debug, Warn)
-2. Client: Implementation for sending logs to backends like Loki
-3. Formatter: Transforms log entries into proper format (JSON, string, Loki protocol)
-4. SyncLogger: Synchronous implementation that blocks until logs are sent
+2. Client: Sends logs to Loki via HTTP push API
+3. Formatter: Transforms log entries into bytes (JSON or human-readable string)
 
 # Basic Usage
 
-Create a client and synchronous logger:
+Create a client and logger:
 
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	client := cloudlog.NewClient("http://loki-instance/api/v1/push", "username", "token", httpClient)
@@ -20,54 +18,47 @@ Create a client and synchronous logger:
 
 Log a message with key-value pairs:
 
-	logger.Info("User logged in",
+	ctx := context.Background()
+	logger.Info(ctx, "User logged in",
 		"user_id", "12345",
-		"method", "oauth",
-		"ip", "192.168.1.1")
+		"method", "oauth")
 
-# Context Propagation
+# Metadata
 
-Add persistent context to a logger:
+Add persistent metadata to a logger:
 
-	// Create a context-specific logger
-	userLogger := logger.WithContext("user_id", "12345", "session_id", "abc123")
+	userLogger := logger.With("user_id", "12345", "session_id", "abc123")
 
-	// All logs from this logger will include the context
-	userLogger.Info("Profile updated")
-	userLogger.Warn("Password change attempted")
+	userLogger.Info(ctx, "Profile updated")
+	userLogger.Warn(ctx, "Password change attempted")
 
-# Formatting Options
+# Loki Labels
 
-Configure formatting:
+Promote keys to Loki stream labels:
 
-	// Loki formatter with custom label keys
-	lokiLogger := cloudlog.NewSync(
-		client,
-		cloudlog.WithFormatter(cloudlog.NewLokiFormatter(
-			cloudlog.WithLabelKeys("request_id", "user_id"),
-		)),
+	logger := cloudlog.NewSync(client,
+		cloudlog.WithJob("my-service"),
+		cloudlog.WithLabelKeys("request_id", "user_id"),
+	)
+
+# Level Filtering
+
+Set minimum log level:
+
+	logger := cloudlog.NewSync(client,
+		cloudlog.WithMinLevel(cloudlog.LevelWarn),
 	)
 
 # Error Handling
 
-Check and handle specific error types:
-
-	err := logger.Info("Operation performed", "status", "success")
+	err := logger.Info(ctx, "Operation performed")
 	if err != nil {
 		switch {
 		case cloudlog.IsConnectionError(err):
 			// Handle connection problem
 		case cloudlog.IsFormatError(err):
 			// Handle formatting issue
-		default:
-			// Handle other errors
 		}
 	}
-
-# Graceful Shutdown
-
-Ensure all logs are processed before exiting:
-
-	logger.Close()
 */
 package cloudlog

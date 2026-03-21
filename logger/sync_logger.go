@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/mwazovzky/cloudlog/client"
@@ -14,6 +15,24 @@ type SyncLogger struct {
 	job       string
 	metadata  map[string]interface{}
 	sender    client.LogSender
+	labelKeys []string // keys to promote to Loki stream labels
+	minLevel  int      // minimum log level to send
+}
+
+// Log level constants
+const (
+	LevelDebug = iota
+	LevelInfo
+	LevelWarn
+	LevelError
+)
+
+// levelValues maps level strings to their numeric values
+var levelValues = map[string]int{
+	"debug": LevelDebug,
+	"info":  LevelInfo,
+	"warn":  LevelWarn,
+	"error": LevelError,
 }
 
 // Option defines a configuration option for SyncLogger
@@ -22,77 +41,68 @@ type Option func(*SyncLogger)
 // NewSync creates a new Logger instance with synchronous delivery
 func NewSync(client client.LogSender, options ...Option) Logger {
 	logger := &SyncLogger{
-		formatter: formatter.NewLokiFormatter(), // Changed from JSONFormatter to LokiFormatter
+		formatter: formatter.NewLokiFormatter(),
 		job:       "application",
 		metadata:  make(map[string]interface{}),
 		sender:    client,
+		minLevel:  LevelDebug,
 	}
 
 	for _, option := range options {
-		option(logger) // Apply options directly to SyncLogger
+		option(logger)
 	}
 
 	return logger
 }
 
 // Info logs an info level message
-func (l *SyncLogger) Info(message string, keyvals ...interface{}) error {
-	return l.log("info", message, keyvals...)
+func (l *SyncLogger) Info(ctx context.Context, message string, keyvals ...interface{}) error {
+	return l.log(ctx, "info", message, keyvals...)
 }
 
 // Error logs an error level message
-func (l *SyncLogger) Error(message string, keyvals ...interface{}) error {
-	return l.log("error", message, keyvals...)
+func (l *SyncLogger) Error(ctx context.Context, message string, keyvals ...interface{}) error {
+	return l.log(ctx, "error", message, keyvals...)
 }
 
 // Debug logs a debug level message
-func (l *SyncLogger) Debug(message string, keyvals ...interface{}) error {
-	return l.log("debug", message, keyvals...)
+func (l *SyncLogger) Debug(ctx context.Context, message string, keyvals ...interface{}) error {
+	return l.log(ctx, "debug", message, keyvals...)
 }
 
 // Warn logs a warning level message
-func (l *SyncLogger) Warn(message string, keyvals ...interface{}) error {
-	return l.log("warn", message, keyvals...)
+func (l *SyncLogger) Warn(ctx context.Context, message string, keyvals ...interface{}) error {
+	return l.log(ctx, "warn", message, keyvals...)
 }
 
-// Close gracefully shuts down the logger
-func (l *SyncLogger) Close() error {
-	// No special handling needed for sync logger
-	return nil
-}
-
-// Flush forces delivery of any buffered messages
-func (l *SyncLogger) Flush() error {
-	// No buffering for sync logger
-	return nil
-}
-
-// WithContext returns a new logger with additional context
-func (l *SyncLogger) WithContext(keyvals ...interface{}) Logger {
+// With returns a new logger with additional metadata
+func (l *SyncLogger) With(keyvals ...interface{}) Logger {
 	newLogger := &SyncLogger{
 		formatter: l.formatter,
 		job:       l.job,
 		metadata:  copyMetadata(l.metadata),
 		sender:    l.sender,
+		labelKeys: l.labelKeys,
+		minLevel:  l.minLevel,
 	}
 
-	// Add new context as metadata
 	processKeyvals(newLogger.metadata, keyvals...)
-
 	return newLogger
 }
 
 // WithJob returns a new logger with a different job name
 func (l *SyncLogger) WithJob(job string) Logger {
-	newLogger := &SyncLogger{
+	return &SyncLogger{
 		formatter: l.formatter,
 		job:       job,
 		metadata:  copyMetadata(l.metadata),
 		sender:    l.sender,
+		labelKeys: l.labelKeys,
+		minLevel:  l.minLevel,
 	}
-
-	return newLogger
 }
+
+// Option constructors
 
 // WithFormatter sets a custom formatter for the logger
 func WithFormatter(f formatter.Formatter) Option {
@@ -115,18 +125,31 @@ func WithMetadata(key string, value interface{}) Option {
 	}
 }
 
+// WithLabelKeys specifies keys to promote to Loki stream labels
+func WithLabelKeys(keys ...string) Option {
+	return func(l *SyncLogger) {
+		l.labelKeys = keys
+	}
+}
+
+// WithMinLevel sets the minimum log level (LevelDebug, LevelInfo, LevelWarn, LevelError)
+func WithMinLevel(level int) Option {
+	return func(l *SyncLogger) {
+		l.minLevel = level
+	}
+}
+
 // log is the internal logging function
-func (l *SyncLogger) log(level string, message string, keyvals ...interface{}) error {
+func (l *SyncLogger) log(ctx context.Context, level string, message string, keyvals ...interface{}) error {
+	// Check minimum level
+	if levelVal, ok := levelValues[level]; ok && levelVal < l.minLevel {
+		return nil
+	}
+
 	// Combine passed key-values with default metadata
 	allKeyVals := make([]interface{}, 0, len(keyvals)+len(l.metadata)*2+2)
-
-	// Add message first
 	allKeyVals = append(allKeyVals, "message", message)
-
-	// Add provided key-values
 	allKeyVals = append(allKeyVals, keyvals...)
-
-	// Add default metadata
 	for k, v := range l.metadata {
 		allKeyVals = append(allKeyVals, k, v)
 	}
@@ -134,17 +157,41 @@ func (l *SyncLogger) log(level string, message string, keyvals ...interface{}) e
 	// Create log entry
 	entry := formatter.NewLogEntry(l.job, level, allKeyVals...)
 
-	// Format the log entry
-	formatted, err := l.formatter.Format(entry)
+	// Extract label values and remove them from content
+	labels := map[string]string{
+		"job": l.job,
+	}
+	for _, key := range l.labelKeys {
+		if value, exists := entry.KeyVals[key]; exists {
+			labels[key] = fmt.Sprintf("%v", value)
+			delete(entry.KeyVals, key)
+		}
+	}
+
+	// Format the log content
+	content, err := l.formatter.Format(entry)
 	if err != nil {
 		return fmt.Errorf("%w: failed to format log entry: %v", errors.ErrInvalidFormat, err)
 	}
 
-	// Direct synchronous sending
-	return l.sender.Send(formatted)
+	// Build LokiEntry and send
+	lokiEntry := client.LokiEntry{
+		Streams: []client.LokiStream{
+			{
+				Stream: labels,
+				Values: [][]string{
+					{
+						fmt.Sprintf("%d", entry.Timestamp.UnixNano()),
+						string(content),
+					},
+				},
+			},
+		},
+	}
+
+	return l.sender.Send(ctx, lokiEntry)
 }
 
-// Helper function to copy metadata
 func copyMetadata(metadata map[string]interface{}) map[string]interface{} {
 	newMetadata := make(map[string]interface{}, len(metadata))
 	for k, v := range metadata {
@@ -153,7 +200,6 @@ func copyMetadata(metadata map[string]interface{}) map[string]interface{} {
 	return newMetadata
 }
 
-// Helper function to process key-value pairs into metadata
 func processKeyvals(metadata map[string]interface{}, keyvals ...interface{}) {
 	for i := 0; i < len(keyvals)-1; i += 2 {
 		key, ok := keyvals[i].(string)

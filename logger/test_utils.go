@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -15,7 +16,7 @@ type mockSender struct {
 	shouldFail bool
 }
 
-func (m *mockSender) Send(entry client.LokiEntry) error {
+func (m *mockSender) Send(_ context.Context, entry client.LokiEntry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

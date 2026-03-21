@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/mwazovzky/cloudlog/client"
 )
 
 // StringFormatterOption configures the StringFormatter
@@ -19,7 +17,7 @@ type stringOptions struct{}
 // WithTimeFormat sets the time format used for timestamps
 func (stringOptions) WithTimeFormat(format string) StringFormatterOption {
 	return func(f *StringFormatter) {
-		f.SetTimeFormat(format)
+		f.timeFormat = format
 	}
 }
 
@@ -40,13 +38,8 @@ func WithPairSeparator(separator string) StringFormatterOption {
 // StringFormatter formats log entries as readable strings
 type StringFormatter struct {
 	timeFormat  string
-	keyValueSep string // Field name needs to match what tests expect
-	pairSep     string // Field name needs to match what tests expect
-}
-
-// SetTimeFormat sets the time format for the formatter
-func (f *StringFormatter) SetTimeFormat(format string) {
-	f.timeFormat = format
+	keyValueSep string
+	pairSep     string
 }
 
 // NewStringFormatter creates a new StringFormatter
@@ -64,40 +57,17 @@ func NewStringFormatter(options ...StringFormatterOption) *StringFormatter {
 	return formatter
 }
 
-// Format converts a log entry to a formatted string
-// To maintain compatibility with the Formatter interface, it returns a LokiEntry
-func (f *StringFormatter) Format(entry LogEntry) (client.LokiEntry, error) {
+// Format converts a log entry to a human-readable string
+func (f *StringFormatter) Format(entry LogEntry) ([]byte, error) {
 	var builder strings.Builder
 
-	// Add timestamp
 	builder.WriteString(fmt.Sprintf("time%s%s%s", f.keyValueSep, entry.Timestamp.Format(f.timeFormat), f.pairSep))
-
-	// Add job and level
 	builder.WriteString(fmt.Sprintf("job%s%s%s", f.keyValueSep, entry.Job, f.pairSep))
 	builder.WriteString(fmt.Sprintf("level%s%s%s", f.keyValueSep, entry.Level, f.pairSep))
 
-	// Add all other key-values
 	for k, v := range entry.KeyVals {
 		builder.WriteString(fmt.Sprintf("%s%s%v%s", k, f.keyValueSep, v, f.pairSep))
 	}
 
-	// Create a LokiEntry from the formatted string
-	content := builder.String()
-	lokiEntry := client.LokiEntry{
-		Streams: []client.LokiStream{
-			{
-				Stream: map[string]string{
-					"job": entry.Job,
-				},
-				Values: [][]string{
-					{
-						fmt.Sprintf("%d", entry.Timestamp.UnixNano()),
-						content,
-					},
-				},
-			},
-		},
-	}
-
-	return lokiEntry, nil
+	return []byte(builder.String()), nil
 }

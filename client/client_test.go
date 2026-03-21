@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockHTTPClient implements the Doer interface for testing.
+// MockHTTPClient implements the HTTPClient interface for testing.
 type MockHTTPClient struct {
 	mock.Mock
 }
@@ -51,13 +51,13 @@ func TestLokiClient_Send(t *testing.T) {
 		},
 	}
 
-	err := client.Send(entry)
+	err := client.Send(context.Background(), entry)
 	assert.NoError(t, err)
 
 	mockHTTPClient.ExpectedCalls = nil
 	mockHTTPClient.On("Do", mock.Anything).Return(nil, fmt.Errorf("network error"))
 
-	err = client.Send(entry)
+	err = client.Send(context.Background(), entry)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "network error")
 }
@@ -81,7 +81,7 @@ func TestLokiClient_Send_ErrorHandling(t *testing.T) {
 			},
 		}
 
-		err := client.Send(entry)
+		err := client.Send(context.Background(), entry)
 		assert.Error(t, err)
 		assert.True(t, stderrors.Is(err, clouderrors.ErrConnectionFailed))
 
@@ -111,7 +111,7 @@ func TestLokiClient_Send_ErrorHandling(t *testing.T) {
 			},
 		}
 
-		err := client.Send(entry)
+		err := client.Send(context.Background(), entry)
 		assert.Error(t, err)
 		assert.True(t, stderrors.Is(err, clouderrors.ErrResponseError), "Expected error to be ErrResponseError")
 		assert.Contains(t, err.Error(), "internal server error", "Expected error message to include response body")
@@ -154,7 +154,7 @@ func TestLokiClient_Send_ValidPayloadFormat(t *testing.T) {
 		},
 	}
 
-	err := client.Send(entry)
+	err := client.Send(context.Background(), entry)
 	assert.NoError(t, err)
 
 	// Verify the request was captured and the Do method was called
@@ -244,7 +244,7 @@ func TestSendAdditionalCases(t *testing.T) {
 	}
 
 	// Send with a job string (not context)
-	err := client.Send(entry)
+	err := client.Send(context.Background(), entry)
 
 	// Verify we get an error
 	assert.Error(t, err)
@@ -282,7 +282,7 @@ func TestSendErrorHandling(t *testing.T) {
 		},
 	}
 
-	err := badURLClient.Send(entry)
+	err := badURLClient.Send(context.Background(), entry)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "missing protocol scheme")
 
@@ -291,7 +291,7 @@ func TestSendErrorHandling(t *testing.T) {
 	timeoutErr := fmt.Errorf("context deadline exceeded")
 	mockHTTPClient.On("Do", mock.Anything).Return(nil, timeoutErr)
 
-	err = client.Send(entry)
+	err = client.Send(context.Background(), entry)
 	assert.Error(t, err)
 	// Instead of checking for the specific message, verify that it wraps the correct error type
 	assert.True(t, stderrors.Is(err, clouderrors.ErrConnectionFailed), "Expected a connection error")
@@ -338,7 +338,7 @@ func TestLokiClient_SendEntry(t *testing.T) {
 	}
 
 	// Send the entry
-	err := client.Send(entry)
+	err := client.Send(context.Background(), entry)
 	assert.NoError(t, err)
 
 	// Verify the request was captured and the Do method was called
@@ -425,7 +425,7 @@ func TestSend(t *testing.T) {
 	}
 
 	// Send the entry
-	err := client.Send(entry)
+	err := client.Send(context.Background(), entry)
 	assert.NoError(t, err)
 
 	// Verify the request was captured and the Do method was called
@@ -503,7 +503,7 @@ func TestSendError(t *testing.T) {
 		},
 	}
 
-	err := badURLClient.Send(entry)
+	err := badURLClient.Send(context.Background(), entry)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "missing protocol scheme")
 
@@ -512,7 +512,7 @@ func TestSendError(t *testing.T) {
 	timeoutErr := fmt.Errorf("context deadline exceeded")
 	mockHTTPClient.On("Do", mock.Anything).Return(nil, timeoutErr)
 
-	err = client.Send(entry)
+	err = client.Send(context.Background(), entry)
 	assert.Error(t, err)
 
 	// Adjust assertion to match the actual behavior
