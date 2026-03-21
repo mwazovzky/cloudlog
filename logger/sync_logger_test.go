@@ -125,13 +125,4 @@ func TestSyncLoggerOptions(t *testing.T) {
 	// Test WithMetadata
 	logger = NewSync(sender, WithMetadata("key1", "value1")).(*SyncLogger)
 	assert.Equal(t, "value1", logger.metadata["key1"])
-
-	// Test WithMetadataMap
-	metadataMap := map[string]interface{}{
-		"env":     "test",
-		"version": "1.0.0",
-	}
-	logger = NewSync(sender, WithMetadataMap(metadataMap)).(*SyncLogger)
-	assert.Equal(t, "test", logger.metadata["env"])
-	assert.Equal(t, "1.0.0", logger.metadata["version"])
 }

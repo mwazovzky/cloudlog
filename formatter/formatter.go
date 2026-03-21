@@ -14,10 +14,5 @@ import "github.com/mwazovzky/cloudlog/client"
 type Formatter interface {
 	// Format converts a log entry to a Loki entry
 	Format(entry LogEntry) (client.LokiEntry, error)
-
-	// FormatBatch converts multiple log entries for the same job into a single Loki entry
-	// All entries are assumed to be for the same job
-	FormatBatch(job string, entries []LogEntry) (client.LokiEntry, error)
 }
 
-// Additional interfaces and types may be defined below

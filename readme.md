@@ -14,8 +14,6 @@ CloudLog is a structured logging library for Go applications that provides seaml
 - **Context Propagation**: Attach persistent metadata to loggers
 - **Flexible Formatting**: JSON, human-readable string, and Loki protocol
 - **Grafana Loki Integration**: Native protocol support with proper labeling
-- **Synchronous & Asynchronous Modes**: Block or non-block as needed
-- **Batched Logging**: High-throughput with configurable batching
 - **Error Handling**: Typed errors with helpful checking functions
 - **Minimal Dependencies**: Only relies on the standard library and testify for tests
 
@@ -27,7 +25,7 @@ go get github.com/mwazovzky/cloudlog
 
 ## Quick Start
 
-### Synchronous Logging (Simple Use Cases)
+### Basic Usage
 
 ```go
 package main
@@ -66,32 +64,6 @@ func main() {
 		fmt.Println("Failed to log:", err)
 	}
 }
-```
-
-### Asynchronous Logging (High Volume)
-
-```go
-// Create asynchronous logger for high-throughput scenarios
-asyncLogger := cloudlog.NewAsync(
-	client,
-	cloudlog.WithJob("api-service"),
-	cloudlog.WithBufferSize(10000),        // Buffer up to 10,000 log entries
-	cloudlog.WithBatchSize(100),           // Send in batches of 100
-	cloudlog.WithFlushInterval(1*time.Second), // Flush at least every second
-	cloudlog.WithWorkers(4),               // Use 4 worker goroutines
-)
-
-// Non-blocking log calls
-asyncLogger.Info("Request processed",
-	"path", "/api/users",
-	"method", "GET",
-	"status", 200,
-	"duration_ms", 45,
-)
-
-// Before application exit, ensure logs are sent
-asyncLogger.Flush()  // Wait for all buffered logs to be sent
-asyncLogger.Close()  // Release resources
 ```
 
 ## Context Propagation
@@ -138,23 +110,39 @@ if err != nil {
 		// Handle connection failure (retry, fallback, etc.)
 	case cloudlog.IsFormatError(err):
 		// Handle formatting error
-	case cloudlog.IsBufferFullError(err):
-		// Handle buffer full situation (async logger)
 	default:
 		// Handle other errors
 	}
 }
 ```
 
-## AsyncLogger Configuration
+## Logger Configuration Options
 
-| Option                        | Description                             | Default |
-| ----------------------------- | --------------------------------------- | ------- |
-| `WithBufferSize(size)`        | Maximum number of log entries in buffer | 1000    |
-| `WithBatchSize(size)`         | Number of logs to send in each batch    | 100     |
-| `WithFlushInterval(duration)` | Maximum time between flushes            | 5s      |
-| `WithWorkers(count)`          | Number of worker goroutines             | 2       |
-| `WithBlockOnFull(bool)`       | Whether to block when buffer is full    | false   |
+### StringFormatter Options
+
+| Option                         | Description                                |
+| ------------------------------ | ------------------------------------------ |
+| `WithStringTimeFormat(format)` | Sets the time format for string formatter  |
+| `WithKeyValueSeparator(sep)`   | Sets the separator between keys and values |
+| `WithPairSeparator(sep)`       | Sets the separator between key-value pairs |
+
+### LokiFormatter Options
+
+| Option                      | Description                                          |
+| --------------------------- | ---------------------------------------------------- |
+| `WithLabelKeys(keys...)`    | Specifies keys to use as labels in Loki formatter    |
+| `WithTimeFormat(format)`    | Sets the time format for Loki formatter              |
+| `WithTimestampField(field)` | Sets the field name for timestamps in Loki formatter |
+| `WithLevelField(field)`     | Sets the field name for log levels in Loki formatter |
+| `WithJobField(field)`       | Sets the field name for job in Loki formatter        |
+
+### SyncLogger Configuration
+
+| Option                     | Description                              |
+| -------------------------- | ---------------------------------------- |
+| `WithJob(job)`             | Sets the default job name for the logger |
+| `WithMetadata(key, value)` | Adds default metadata to all log entries |
+| `WithFormatter(formatter)` | Sets a custom formatter for the logger   |
 
 ## Documentation
 
@@ -163,10 +151,6 @@ For complete documentation, visit [GoDoc](https://godoc.org/github.com/mwazovzky
 ## Examples
 
 For more examples, check the [examples directory](https://github.com/mwazovzky/cloudlog/tree/main/examples).
-
-## Contributing
-
-Contributions are welcome! Please ensure tests pass with `go test ./...` before submitting a pull request.
 
 ## License
 

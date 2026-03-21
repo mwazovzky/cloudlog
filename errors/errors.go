@@ -18,36 +18,9 @@ var (
 
 	// ErrInvalidInput indicates invalid input parameters
 	ErrInvalidInput = errors.New("invalid input parameters")
-
-	// ErrBufferFull indicates that the async buffer is full
-	ErrBufferFull = errors.New("log buffer is full")
-
-	// ErrTimeout indicates an operation timed out
-	ErrTimeout = errors.New("operation timed out")
-
-	// ErrShutdown indicates a problem during shutdown
-	ErrShutdown = errors.New("error during shutdown")
-
-	// ErrLoggerClosed indicates an attempt to log after logger is closed
-	ErrLoggerClosed = errors.New("logger is closed")
-
-	// ErrProcessingFailed indicates an error while processing logs asynchronously
-	ErrProcessingFailed = errors.New("asynchronous log processing failed")
 )
 
-// ErrorHandler defines a function type for handling errors that occur during
-// asynchronous operations where errors can't be returned to the caller
-type ErrorHandler func(error)
-
-// NoopErrorHandler is a default error handler that does nothing
-func NoopErrorHandler(_ error) {}
-
-// Is checks if an error is of a specific type
-func Is(err, target error) bool {
-	return errors.Is(err, target)
-}
-
-// Error type check functions - simplified API that uses standard errors package
+// Error type check functions
 func IsFormatError(err error) bool {
 	return errors.Is(err, ErrInvalidFormat)
 }
@@ -58,28 +31,4 @@ func IsConnectionError(err error) bool {
 
 func IsResponseError(err error) bool {
 	return errors.Is(err, ErrResponseError)
-}
-
-func IsInputError(err error) bool {
-	return errors.Is(err, ErrInvalidInput)
-}
-
-func IsBufferFullError(err error) bool {
-	return errors.Is(err, ErrBufferFull)
-}
-
-func IsTimeoutError(err error) bool {
-	return errors.Is(err, ErrTimeout)
-}
-
-func IsShutdownError(err error) bool {
-	return errors.Is(err, ErrShutdown)
-}
-
-func IsLoggerClosedError(err error) bool {
-	return errors.Is(err, ErrLoggerClosed)
-}
-
-func IsProcessingError(err error) bool {
-	return errors.Is(err, ErrProcessingFailed)
 }

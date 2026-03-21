@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mwazovzky/cloudlog/errors"
+	stderrors "errors"
+
+	clouderrors "github.com/mwazovzky/cloudlog/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -65,7 +67,7 @@ func TestLokiClient_Send_ErrorHandling(t *testing.T) {
 
 	t.Run("ConnectionError", func(t *testing.T) {
 		// Setup mock for connection error
-		mockHTTPClient.On("Do", mock.Anything).Return(nil, fmt.Errorf("%w: network error", errors.ErrConnectionFailed))
+		mockHTTPClient.On("Do", mock.Anything).Return(nil, fmt.Errorf("%w: network error", clouderrors.ErrConnectionFailed))
 		client := NewLokiClient("http://mock-loki-url", "test-user", "test-token", mockHTTPClient)
 
 		entry := LokiEntry{
@@ -81,7 +83,7 @@ func TestLokiClient_Send_ErrorHandling(t *testing.T) {
 
 		err := client.Send(entry)
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, errors.ErrConnectionFailed))
+		assert.True(t, stderrors.Is(err, clouderrors.ErrConnectionFailed))
 
 		// Clear mock for the next subtest
 		mockHTTPClient.ExpectedCalls = nil
@@ -111,7 +113,7 @@ func TestLokiClient_Send_ErrorHandling(t *testing.T) {
 
 		err := client.Send(entry)
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, errors.ErrResponseError), "Expected error to be ErrResponseError")
+		assert.True(t, stderrors.Is(err, clouderrors.ErrResponseError), "Expected error to be ErrResponseError")
 		assert.Contains(t, err.Error(), "internal server error", "Expected error message to include response body")
 	})
 }
@@ -211,40 +213,6 @@ func isNumericString(s string) bool {
 	return len(s) > 0 && strings.Trim(s, "0123456789") == ""
 }
 
-func TestWithTimeout(t *testing.T) {
-	// Test that WithTimeout option properly sets the timeout
-	timeout := 5 * time.Second
-	opt := WithTimeout(timeout)
-
-	// Create a mock client that we can apply the option to
-	testURL := "http://example.com"
-	testUser := "test-user"
-	testToken := "test-token"
-	mockHTTPClient := new(MockHTTPClient)
-
-	// Apply the option during client creation
-	client := NewLokiClientWithOptions(testURL, testUser, testToken, mockHTTPClient, opt)
-
-	// Since we can't access the private timeout field directly, we'll verify the client was created
-	assert.NotNil(t, client)
-	assert.Equal(t, testURL, client.url) // This should still be accessible
-}
-
-func TestNewLokiClientWithOptions(t *testing.T) {
-	// Test client creation with custom options
-	testURL := "http://loki.example.com"
-	testUser := "test-user"
-	testToken := "test-token"
-	mockHTTPClient := new(MockHTTPClient)
-	testTimeout := 10 * time.Second
-
-	client := NewLokiClientWithOptions(testURL, testUser, testToken, mockHTTPClient, WithTimeout(testTimeout))
-
-	assert.Equal(t, testURL, client.url)
-	// We can't directly access the timeout field, but we can verify the client has been created successfully
-	assert.NotNil(t, client)
-}
-
 func TestSendAdditionalCases(t *testing.T) {
 	// Test context cancellation scenario
 	mockHTTPClient := new(MockHTTPClient)
@@ -282,32 +250,8 @@ func TestSendAdditionalCases(t *testing.T) {
 	assert.Error(t, err)
 	// The error should be wrapped, so we can't directly check for context.Canceled
 	// But we can check that it's a connection error
-	assert.True(t, errors.IsConnectionError(err))
+	assert.True(t, clouderrors.IsConnectionError(err))
 	mockHTTPClient.AssertExpectations(t)
-}
-
-func TestWithTimeoutEdgeCases(t *testing.T) {
-	// Test with zero timeout value
-	zeroTimeout := time.Duration(0)
-
-	// Create client with zero timeout
-	testURL := "http://example.com"
-	testUser := "test-user"
-	testToken := "test-token"
-	mockHTTPClient := new(MockHTTPClient)
-
-	// Create client with zero timeout option
-	zeroClient := NewLokiClientWithOptions(testURL, testUser, testToken, mockHTTPClient, WithTimeout(zeroTimeout))
-	assert.NotNil(t, zeroClient)
-
-	// Test with negative timeout (should be handled gracefully)
-	negativeTimeout := -5 * time.Second
-
-	// Create client with negative timeout (should not panic)
-	assert.NotPanics(t, func() {
-		negClient := NewLokiClientWithOptions(testURL, testUser, testToken, mockHTTPClient, WithTimeout(negativeTimeout))
-		assert.NotNil(t, negClient)
-	})
 }
 
 func TestSendErrorHandling(t *testing.T) {
@@ -344,13 +288,13 @@ func TestSendErrorHandling(t *testing.T) {
 
 	mockHTTPClient.ExpectedCalls = nil
 	mockHTTPClient.Calls = nil
-	timeoutErr := fmt.Errorf("%w: context deadline exceeded", errors.ErrTimeout)
+	timeoutErr := fmt.Errorf("context deadline exceeded")
 	mockHTTPClient.On("Do", mock.Anything).Return(nil, timeoutErr)
 
 	err = client.Send(entry)
 	assert.Error(t, err)
 	// Instead of checking for the specific message, verify that it wraps the correct error type
-	assert.True(t, errors.Is(err, errors.ErrConnectionFailed), "Expected a connection error")
+	assert.True(t, stderrors.Is(err, clouderrors.ErrConnectionFailed), "Expected a connection error")
 
 	// Use a generic check that would work with the actual implementation
 	assert.Contains(t, err.Error(), "connection to log service failed", "Expected connection failed message")
@@ -441,38 +385,6 @@ func TestLokiClient_SendEntry(t *testing.T) {
 
 	// Verify headers
 	assert.Equal(t, "application/json", capturedRequest.Header.Get("Content-Type"))
-}
-
-func TestWithTimeout_EdgeCases(t *testing.T) {
-	// Test with different HTTP client types
-
-	// Case 1: Basic HTTP client - timeout should apply
-	httpClient := &http.Client{}
-	testURL := "http://example.com"
-	testUser := "test-user"
-	testToken := "test-token"
-	timeout := 7 * time.Second
-
-	// Store the result but don't need to use it directly
-	_ = NewLokiClientWithOptions(testURL, testUser, testToken, httpClient, WithTimeout(timeout))
-	// Can't directly access private fields, but we can verify the client's timeout was changed
-	assert.Equal(t, timeout, httpClient.Timeout, "Timeout should be applied to HTTP client")
-
-	// Case 2: Custom implementation not matching http.Client - should not panic
-	customClient := &customDoer{}
-	clientWithCustomDoer := NewLokiClientWithOptions(testURL, testUser, testToken, customClient, WithTimeout(timeout))
-	assert.NotNil(t, clientWithCustomDoer, "Should create client with custom doer")
-
-	// Case 3: Zero timeout
-	zeroClient := NewLokiClientWithOptions(testURL, testUser, testToken, httpClient, WithTimeout(0))
-	assert.NotNil(t, zeroClient, "Should handle zero timeout")
-}
-
-// A custom implementation of the Doer interface that is not an http.Client
-type customDoer struct{}
-
-func (c *customDoer) Do(req *http.Request) (*http.Response, error) {
-	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 }
 
 func TestSend(t *testing.T) {
@@ -597,13 +509,13 @@ func TestSendError(t *testing.T) {
 
 	mockHTTPClient.ExpectedCalls = nil
 	mockHTTPClient.Calls = nil
-	timeoutErr := fmt.Errorf("%w: context deadline exceeded", errors.ErrTimeout)
+	timeoutErr := fmt.Errorf("context deadline exceeded")
 	mockHTTPClient.On("Do", mock.Anything).Return(nil, timeoutErr)
 
 	err = client.Send(entry)
 	assert.Error(t, err)
 
 	// Adjust assertion to match the actual behavior
-	assert.True(t, errors.Is(err, errors.ErrConnectionFailed), "Expected a connection error")
+	assert.True(t, stderrors.Is(err, clouderrors.ErrConnectionFailed), "Expected a connection error")
 	assert.Contains(t, err.Error(), "connection to log service failed", "Expected connection failed error message")
 }

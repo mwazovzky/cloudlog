@@ -163,12 +163,3 @@ func processKeyvals(metadata map[string]interface{}, keyvals ...interface{}) {
 		metadata[key] = keyvals[i+1]
 	}
 }
-
-// WithMetadataMap adds multiple metadata key-value pairs to the logger
-func WithMetadataMap(md map[string]interface{}) Option {
-	return func(l *SyncLogger) {
-		for k, v := range md {
-			l.metadata[k] = v
-		}
-	}
-}

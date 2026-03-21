@@ -9,7 +9,6 @@ flexible formatting options.
 2. Client: Implementation for sending logs to backends like Loki
 3. Formatter: Transforms log entries into proper format (JSON, string, Loki protocol)
 4. SyncLogger: Synchronous implementation that blocks until logs are sent
-5. AsyncLogger: Non-blocking implementation with batching and buffering
 
 # Basic Usage
 
@@ -18,16 +17,6 @@ Create a client and synchronous logger:
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	client := cloudlog.NewClient("http://loki-instance/api/v1/push", "username", "token", httpClient)
 	logger := cloudlog.NewSync(client, cloudlog.WithJob("my-service"))
-
-Create an asynchronous logger for high-volume scenarios:
-
-	asyncLogger := cloudlog.NewAsync(client,
-		cloudlog.WithJob("my-service"),
-		cloudlog.WithBufferSize(10000),
-		cloudlog.WithBatchSize(100),
-		cloudlog.WithFlushInterval(1 * time.Second),
-		cloudlog.WithWorkers(4),
-	)
 
 Log a message with key-value pairs:
 
@@ -51,23 +40,11 @@ Add persistent context to a logger:
 
 Configure formatting:
 
-	// String formatter for console output
-	consoleLogger := cloudlog.NewSync(
-		consoleClient,
-		cloudlog.WithFormatter(formatter.NewStringFormatter(
-			formatter.String.WithTimeFormat(time.RFC822),
-			formatter.WithKeyValueSeparator(": "),
-			formatter.WithPairSeparator(" | "),
-		)),
-	)
-
-	// Loki formatter with custom field names
+	// Loki formatter with custom label keys
 	lokiLogger := cloudlog.NewSync(
 		client,
-		cloudlog.WithFormatter(formatter.NewLokiFormatter(
-			formatter.Loki.WithTimestampField("@timestamp"),
-			formatter.Loki.WithLevelField("severity"),
-			formatter.WithLabelKeys("request_id", "user_id"),
+		cloudlog.WithFormatter(cloudlog.NewLokiFormatter(
+			cloudlog.WithLabelKeys("request_id", "user_id"),
 		)),
 	)
 
@@ -82,8 +59,6 @@ Check and handle specific error types:
 			// Handle connection problem
 		case cloudlog.IsFormatError(err):
 			// Handle formatting issue
-		case cloudlog.IsBufferFullError(err):
-			// AsyncLogger buffer is full
 		default:
 			// Handle other errors
 		}
@@ -93,11 +68,6 @@ Check and handle specific error types:
 
 Ensure all logs are processed before exiting:
 
-	// For synchronous loggers
-	syncLogger.Close()
-
-	// For asynchronous loggers, flush before closing
-	asyncLogger.Flush()  // Wait for all buffered logs to be sent
-	asyncLogger.Close()  // Release resources
+	logger.Close()
 */
 package cloudlog

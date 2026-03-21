@@ -32,34 +32,3 @@ func NewLogEntry(job string, level string, keyvals ...interface{}) LogEntry {
 
 	return entry
 }
-
-// LogEntryOption defines a function to configure LogEntry
-type LogEntryOption func(*LogEntry)
-
-// NewLogEntryWithOptions creates a new LogEntry with the given options
-func NewLogEntryWithOptions(options ...LogEntryOption) LogEntry {
-	entry := LogEntry{
-		Timestamp: time.Now(),
-		KeyVals:   make(map[string]interface{}),
-	}
-
-	for _, option := range options {
-		option(&entry)
-	}
-
-	return entry
-}
-
-// WithJob sets the job name for a LogEntry
-func WithJob(job string) LogEntryOption {
-	return func(e *LogEntry) {
-		e.Job = job
-	}
-}
-
-// WithLevel sets the log level for a LogEntry
-func WithLevel(level string) LogEntryOption {
-	return func(e *LogEntry) {
-		e.Level = level
-	}
-}

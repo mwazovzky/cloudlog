@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/mwazovzky/cloudlog/errors"
 )
@@ -26,10 +25,6 @@ type LokiStream struct {
 type LokiEntry struct {
 	Streams []LokiStream `json:"streams"`
 }
-
-// The custom MarshalJSON method is redundant since the struct already has proper JSON tags
-// and doesn't require any special handling during marshaling.
-// Removing this method will use Go's default JSON marshaling which works perfectly fine here.
 
 // Doer is an interface that matches http.Client's Do method
 type Doer interface {
@@ -52,34 +47,6 @@ func NewLokiClient(url, user, token string, httpClient Doer) *LokiClient {
 		token:  token,
 		client: httpClient,
 	}
-}
-
-// LokiClientOption defines a function to configure a LokiClient
-type LokiClientOption func(*LokiClient)
-
-// WithTimeout sets a custom timeout for the client
-func WithTimeout(timeout time.Duration) LokiClientOption {
-	return func(c *LokiClient) {
-		if httpClient, ok := c.client.(*http.Client); ok {
-			httpClient.Timeout = timeout
-		}
-	}
-}
-
-// NewLokiClientWithOptions creates a client with the provided options
-func NewLokiClientWithOptions(url, user, token string, httpClient Doer, options ...LokiClientOption) *LokiClient {
-	client := &LokiClient{
-		url:    url,
-		user:   user,
-		token:  token,
-		client: httpClient,
-	}
-
-	for _, option := range options {
-		option(client)
-	}
-
-	return client
 }
 
 // Send sends a pre-constructed Loki entry to the Loki server
