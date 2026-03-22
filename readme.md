@@ -102,14 +102,23 @@ if err != nil {
 
 ## Configuration Options
 
-| Option                     | Description                                    |
-| -------------------------- | ---------------------------------------------- |
-| `WithJob(job)`             | Sets the job name (Loki stream label)          |
-| `WithMetadata(key, value)` | Adds default metadata to all log entries       |
-| `WithFormatter(formatter)` | Sets a custom formatter                        |
-| `WithLabelKeys(keys...)`   | Promotes keys to Loki stream labels            |
-| `WithMinLevel(level)`      | Sets minimum log level                         |
-| `WithTimeFormat(format)`   | Sets timestamp format (LokiFormatter option)   |
+### Logger Options
+
+| Option                     | Description                              |
+| -------------------------- | ---------------------------------------- |
+| `WithJob(job)`             | Sets the job name (Loki stream label)    |
+| `WithMetadata(key, value)` | Adds default metadata to all log entries |
+| `WithFormatter(formatter)` | Sets a custom formatter                  |
+| `WithLabelKeys(keys...)`   | Promotes keys to Loki stream labels      |
+| `WithMinLevel(level)`      | Sets minimum log level                   |
+
+### Formatter Options
+
+Used with `NewLokiFormatter(...)`:
+
+| Option                   | Description            |
+| ------------------------ | ---------------------- |
+| `WithTimeFormat(format)` | Sets timestamp format  |
 
 ## Documentation
 
