@@ -61,12 +61,12 @@ func NewStringFormatter(options ...StringFormatterOption) *StringFormatter {
 func (f *StringFormatter) Format(entry LogEntry) ([]byte, error) {
 	var builder strings.Builder
 
-	builder.WriteString(fmt.Sprintf("time%s%s%s", f.keyValueSep, entry.Timestamp.Format(f.timeFormat), f.pairSep))
-	builder.WriteString(fmt.Sprintf("job%s%s%s", f.keyValueSep, entry.Job, f.pairSep))
-	builder.WriteString(fmt.Sprintf("level%s%s%s", f.keyValueSep, entry.Level, f.pairSep))
+	fmt.Fprintf(&builder, "time%s%s%s", f.keyValueSep, entry.Timestamp.Format(f.timeFormat), f.pairSep)
+	fmt.Fprintf(&builder, "job%s%s%s", f.keyValueSep, entry.Job, f.pairSep)
+	fmt.Fprintf(&builder, "level%s%s%s", f.keyValueSep, entry.Level, f.pairSep)
 
 	for k, v := range entry.KeyVals {
-		builder.WriteString(fmt.Sprintf("%s%s%v%s", k, f.keyValueSep, v, f.pairSep))
+		fmt.Fprintf(&builder, "%s%s%v%s", k, f.keyValueSep, v, f.pairSep)
 	}
 
 	return []byte(builder.String()), nil

@@ -69,7 +69,7 @@ func (c *LokiClient) Send(ctx context.Context, entry LokiEntry) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", errors.ErrConnectionFailed, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)

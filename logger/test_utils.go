@@ -27,15 +27,3 @@ func (m *mockSender) Send(_ context.Context, content []byte, labels map[string]s
 	m.labels = append(m.labels, labels)
 	return nil
 }
-
-func (m *mockSender) getContents() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.contents
-}
-
-func (m *mockSender) getLabels() []map[string]string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.labels
-}
