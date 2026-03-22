@@ -26,18 +26,23 @@ const (
 // Type re-exports
 type (
 	Logger     = logger.Logger
-	LogSender  = client.LogSender
+	Sender     = logger.Sender
 	HTTPClient = client.HTTPClient
 	Option     = logger.Option
 )
 
-// NewSync creates a new synchronous logger
-func NewSync(sender client.LogSender, options ...logger.Option) logger.Logger {
-	return logger.NewSync(sender, options...)
+// New creates a new Logger with the given sender and options
+func New(sender logger.Sender, options ...logger.Option) logger.Logger {
+	return logger.New(sender, options...)
+}
+
+// NewSyncSender creates a sender that delivers log entries synchronously
+func NewSyncSender(c client.LogSender) *logger.SyncSender {
+	return logger.NewSyncSender(c)
 }
 
 // NewClient creates a new Loki client with the given credentials
-func NewClient(url, username, token string, httpClient client.HTTPClient) LogSender {
+func NewClient(url, username, token string, httpClient client.HTTPClient) client.LogSender {
 	return client.NewLokiClient(url, username, token, httpClient)
 }
 

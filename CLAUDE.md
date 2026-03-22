@@ -21,19 +21,30 @@ The root package (`cloudlog.go`) is a **facade** re-exporting from internal pack
 
 ### Core packages
 
-- **`logger/`** — `Logger` interface and `SyncLogger`. Log methods accept `context.Context` as first arg.
+- **`logger/`** — `Logger` and `Sender` interfaces, `SyncSender`, and logger implementation. Log methods accept `context.Context`.
 - **`formatter/`** — `Formatter` interface returns `[]byte`. `LokiFormatter` (JSON) and `StringFormatter` (human-readable).
-- **`client/`** — `LogSender` interface and `LokiClient`. Sends `LokiEntry` to Loki's HTTP push API. `Send` accepts `context.Context`.
+- **`client/`** — `LogSender` interface and `LokiClient`. Sends `LokiEntry` to Loki's HTTP push API.
 - **`errors/`** — Sentinel errors with `Is*` helpers.
 
 ### Data flow
 
-`Logger.Info(ctx, msg, kv...)` → `formatter.Format(LogEntry) → []byte` → logger builds `LokiEntry` with labels → `client.Send(ctx, LokiEntry)` → HTTP POST
+```
+Logger.Info(ctx, msg, kv...)
+  → formatter.Format(LogEntry) → []byte
+  → Sender.Send(ctx, content, labels, timestamp)
+  → [SyncSender] builds LokiEntry → LogSender.Send(ctx, LokiEntry) → HTTP POST
+```
+
+### Key interfaces
+
+- **`Logger`** — Info/Error/Debug/Warn + With/WithJob
+- **`Sender`** — Send(ctx, content, labels, timestamp). SyncSender sends immediately. AsyncSender (future) will buffer.
+- **`Formatter`** — Format(LogEntry) → []byte
+- **`LogSender`** — Send(ctx, LokiEntry). Low-level HTTP transport.
 
 ### Public API
 
-- **Constructors:** `NewSync`, `NewClient`, `NewLokiFormatter`
+- **Constructors:** `New`, `NewSyncSender`, `NewClient`, `NewLokiFormatter`
 - **Logger options:** `WithJob`, `WithMetadata`, `WithFormatter`, `WithLabelKeys`, `WithMinLevel`
-- **Formatter options:** `WithTimeFormat`
-- **Error helpers:** `IsFormatError`, `IsConnectionError`, `IsResponseError`
 - **Level constants:** `LevelDebug`, `LevelInfo`, `LevelWarn`, `LevelError`
+- **Error helpers:** `IsFormatError`, `IsConnectionError`, `IsResponseError`

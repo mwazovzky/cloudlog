@@ -4,19 +4,18 @@ import (
 	"context"
 	"fmt"
 	"sync"
-
-	"github.com/mwazovzky/cloudlog/client"
+	"time"
 )
 
-// mockSender is a test implementation of client.LogSender
+// mockSender is a test implementation of Sender
 type mockSender struct {
 	mu         sync.Mutex
-	messages   []string
-	jobs       []string
+	contents   []string
+	labels     []map[string]string
 	shouldFail bool
 }
 
-func (m *mockSender) Send(_ context.Context, entry client.LokiEntry) error {
+func (m *mockSender) Send(_ context.Context, content []byte, labels map[string]string, _ time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -24,19 +23,19 @@ func (m *mockSender) Send(_ context.Context, entry client.LokiEntry) error {
 		return fmt.Errorf("simulated send failure")
 	}
 
-	m.messages = append(m.messages, entry.Streams[0].Values[0][1])
-	m.jobs = append(m.jobs, entry.Streams[0].Stream["job"])
+	m.contents = append(m.contents, string(content))
+	m.labels = append(m.labels, labels)
 	return nil
 }
 
-func (m *mockSender) GetMessages() []string {
+func (m *mockSender) getContents() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.messages
+	return m.contents
 }
 
-func (m *mockSender) GetJobs() []string {
+func (m *mockSender) getLabels() []map[string]string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.jobs
+	return m.labels
 }

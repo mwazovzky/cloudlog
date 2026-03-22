@@ -10,11 +10,12 @@ It features key-value pair logging, context propagation, and flexible formatting
 
 # Basic Usage
 
-Create a client and logger:
+Create a client, sender, and logger:
 
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	client := cloudlog.NewClient("http://loki-instance/api/v1/push", "username", "token", httpClient)
-	logger := cloudlog.NewSync(client, cloudlog.WithJob("my-service"))
+	sender := cloudlog.NewSyncSender(client)
+	logger := cloudlog.New(sender, cloudlog.WithJob("my-service"))
 
 Log a message with key-value pairs:
 
@@ -36,7 +37,7 @@ Add persistent metadata to a logger:
 
 Promote keys to Loki stream labels:
 
-	logger := cloudlog.NewSync(client,
+	logger := cloudlog.New(sender,
 		cloudlog.WithJob("my-service"),
 		cloudlog.WithLabelKeys("request_id", "user_id"),
 	)
@@ -45,7 +46,7 @@ Promote keys to Loki stream labels:
 
 Set minimum log level:
 
-	logger := cloudlog.NewSync(client,
+	logger := cloudlog.New(sender,
 		cloudlog.WithMinLevel(cloudlog.LevelWarn),
 	)
 

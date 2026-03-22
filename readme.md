@@ -45,7 +45,8 @@ func main() {
 		"username", "token", httpClient,
 	)
 
-	logger := cloudlog.NewSync(client, cloudlog.WithJob("user-service"))
+	sender := cloudlog.NewSyncSender(client)
+	logger := cloudlog.New(sender, cloudlog.WithJob("user-service"))
 
 	if err := logger.Info(ctx, "Service started",
 		"version", "1.2.0",
@@ -71,7 +72,7 @@ userLogger.Warn(ctx, "Password expiring", "days_left", 5)
 Promote keys to Loki stream labels (removes them from log content):
 
 ```go
-logger := cloudlog.NewSync(client,
+logger := cloudlog.New(sender,
 	cloudlog.WithJob("api-service"),
 	cloudlog.WithLabelKeys("request_id", "user_id"),
 )
@@ -80,7 +81,7 @@ logger := cloudlog.NewSync(client,
 ## Level Filtering
 
 ```go
-logger := cloudlog.NewSync(client,
+logger := cloudlog.New(sender,
 	cloudlog.WithMinLevel(cloudlog.LevelWarn), // only Warn and Error
 )
 ```

@@ -17,14 +17,14 @@ import (
 
 var ctx = context.Background()
 
-// MockClient is a mock client implementation for testing
-type MockClient struct {
+// mockLogSender implements client.LogSender for testing
+type mockLogSender struct {
 	LastJob       string
 	LastFormatted []byte
 	ShouldError   bool
 }
 
-func (m *MockClient) Send(_ context.Context, entry client.LokiEntry) error {
+func (m *mockLogSender) Send(_ context.Context, entry client.LokiEntry) error {
 	if m.ShouldError {
 		return fmt.Errorf("%w: mock error", errors.ErrConnectionFailed)
 	}
@@ -39,22 +39,26 @@ func (m *MockClient) Send(_ context.Context, entry client.LokiEntry) error {
 	return nil
 }
 
+func newTestLogger(mock *mockLogSender, opts ...Option) Logger {
+	return New(NewSyncSender(mock), opts...)
+}
+
 func TestNewClient(t *testing.T) {
 	c := NewClient("http://test", "user", "token", &http.Client{})
 	assert.NotNil(t, c)
 }
 
 func TestCloudLog_Info(t *testing.T) {
-	mockClient := &MockClient{}
-	logger := NewSync(mockClient)
+	mock := &mockLogSender{}
+	log := newTestLogger(mock)
 
-	err := logger.Info(ctx, "Test message", "key1", "value1", "key2", 42)
+	err := log.Info(ctx, "Test message", "key1", "value1", "key2", 42)
 	assert.NoError(t, err)
 
-	require.NotNil(t, mockClient.LastFormatted)
+	require.NotNil(t, mock.LastFormatted)
 
 	var logData map[string]interface{}
-	err = json.Unmarshal(mockClient.LastFormatted, &logData)
+	err = json.Unmarshal(mock.LastFormatted, &logData)
 	require.NoError(t, err)
 
 	assert.Equal(t, "info", logData["level"])
@@ -64,14 +68,14 @@ func TestCloudLog_Info(t *testing.T) {
 }
 
 func TestWithFormatter(t *testing.T) {
-	mockClient := &MockClient{}
+	mock := &mockLogSender{}
 	stringFormatter := formatter.NewStringFormatter()
-	logger := NewSync(mockClient, WithFormatter(stringFormatter))
+	log := newTestLogger(mock, WithFormatter(stringFormatter))
 
-	err := logger.Info(ctx, "Test message", "key1", "value1")
+	err := log.Info(ctx, "Test message", "key1", "value1")
 	assert.NoError(t, err)
 
-	output := string(mockClient.LastFormatted)
+	output := string(mock.LastFormatted)
 
 	assert.Contains(t, output, "job=application")
 	assert.Contains(t, output, "level=info")
@@ -80,44 +84,44 @@ func TestWithFormatter(t *testing.T) {
 }
 
 func TestWithJob(t *testing.T) {
-	mockClient := &MockClient{}
-	logger := NewSync(mockClient, WithJob("custom-job"))
+	mock := &mockLogSender{}
+	log := newTestLogger(mock, WithJob("custom-job"))
 
-	err := logger.Info(ctx, "Test message")
+	err := log.Info(ctx, "Test message")
 	assert.NoError(t, err)
 
-	assert.Equal(t, "custom-job", mockClient.LastJob)
+	assert.Equal(t, "custom-job", mock.LastJob)
 }
 
 func TestWithMetadata(t *testing.T) {
-	mockClient := &MockClient{}
-	logger := NewSync(mockClient, WithMetadata("version", "1.0"))
+	mock := &mockLogSender{}
+	log := newTestLogger(mock, WithMetadata("version", "1.0"))
 
-	err := logger.Info(ctx, "Test message")
+	err := log.Info(ctx, "Test message")
 	assert.NoError(t, err)
 
-	require.NotNil(t, mockClient.LastFormatted)
+	require.NotNil(t, mock.LastFormatted)
 
 	var logData map[string]interface{}
-	err = json.Unmarshal(mockClient.LastFormatted, &logData)
+	err = json.Unmarshal(mock.LastFormatted, &logData)
 	require.NoError(t, err)
 
 	assert.Equal(t, "1.0", logData["version"])
 }
 
 func TestWith(t *testing.T) {
-	mockClient := &MockClient{}
-	logger := NewSync(mockClient)
+	mock := &mockLogSender{}
+	log := newTestLogger(mock)
 
-	userLogger := logger.With("user_id", "123", "request_id", "req-456")
+	userLogger := log.With("user_id", "123", "request_id", "req-456")
 
 	err := userLogger.Info(ctx, "User action")
 	assert.NoError(t, err)
 
-	require.NotNil(t, mockClient.LastFormatted)
+	require.NotNil(t, mock.LastFormatted)
 
 	var logData map[string]interface{}
-	err = json.Unmarshal(mockClient.LastFormatted, &logData)
+	err = json.Unmarshal(mock.LastFormatted, &logData)
 	require.NoError(t, err)
 
 	assert.Equal(t, "User action", logData["message"])
@@ -126,24 +130,23 @@ func TestWith(t *testing.T) {
 }
 
 func TestLoggerChaining(t *testing.T) {
-	mockClient := &MockClient{}
-
-	logger := NewSync(mockClient,
+	mock := &mockLogSender{}
+	log := newTestLogger(mock,
 		WithJob("base-service"),
 		WithMetadata("version", "1.0"))
 
-	userLogger := logger.With("context_key", "context_value")
+	userLogger := log.With("context_key", "context_value")
 	jobLogger := userLogger.WithJob("specific-job")
 
 	err := jobLogger.Info(ctx, "Chained logger test")
 	assert.NoError(t, err)
 
-	assert.Equal(t, "specific-job", mockClient.LastJob)
+	assert.Equal(t, "specific-job", mock.LastJob)
 
-	require.NotNil(t, mockClient.LastFormatted)
+	require.NotNil(t, mock.LastFormatted)
 
 	var logData map[string]interface{}
-	err = json.Unmarshal(mockClient.LastFormatted, &logData)
+	err = json.Unmarshal(mock.LastFormatted, &logData)
 	require.NoError(t, err)
 
 	assert.Equal(t, "Chained logger test", logData["message"])
@@ -152,10 +155,10 @@ func TestLoggerChaining(t *testing.T) {
 }
 
 func TestErrorHandling(t *testing.T) {
-	mockClient := &MockClient{ShouldError: true}
-	logger := NewSync(mockClient)
+	mock := &mockLogSender{ShouldError: true}
+	log := newTestLogger(mock)
 
-	err := logger.Info(ctx, "Test info")
+	err := log.Info(ctx, "Test info")
 	assert.Error(t, err)
 	assert.True(t, IsConnectionError(err))
 }
