@@ -116,7 +116,7 @@ func WithMetadata(key string, value interface{}) Option {
 
 func WithLabelKeys(keys ...string) Option {
 	return func(l *logger) {
-		l.labelKeys = keys
+		l.labelKeys = append([]string{}, keys...)
 	}
 }
 
