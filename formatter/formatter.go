@@ -1,23 +1,9 @@
-// Package formatter provides different formatting options for log entries.
-// It supports two main formats:
-//
-// 1. LokiFormatter - For Grafana Loki protocol output, optimized for cloud-based logging
-// 2. StringFormatter - For human-readable console output
-//
-// Each formatter supports customization via options for field names, time formats,
-// and other formatting preferences.
+// Package formatter provides formatting options for log entries.
+// It supports LokiFormatter (JSON for Loki) and StringFormatter (human-readable console output).
 package formatter
 
-import "github.com/mwazovzky/cloudlog/client"
-
-// Formatter defines the interface for formatting log entries
+// Formatter defines the interface for formatting log entry content
 type Formatter interface {
-	// Format converts a log entry to a Loki entry
-	Format(entry LogEntry) (client.LokiEntry, error)
-
-	// FormatBatch converts multiple log entries for the same job into a single Loki entry
-	// All entries are assumed to be for the same job
-	FormatBatch(job string, entries []LogEntry) (client.LokiEntry, error)
+	// Format converts a log entry to formatted bytes (JSON, string, etc.)
+	Format(entry LogEntry) ([]byte, error)
 }
-
-// Additional interfaces and types may be defined below

@@ -22,16 +22,3 @@ func TestLogEntryWithInvalidKeyVals(t *testing.T) {
 	entry = NewLogEntry("test-job", "info", "key")
 	assert.Empty(t, entry.KeyVals)
 }
-
-func TestLogEntryWithOptions(t *testing.T) {
-	entry := NewLogEntryWithOptions(
-		WithJob("test-job"),
-		WithLevel("INFO"),
-	)
-
-	entry.KeyVals = map[string]interface{}{"message": "test message"}
-
-	assert.Equal(t, "test-job", entry.Job)
-	assert.Equal(t, "INFO", entry.Level)
-	assert.Equal(t, "test message", entry.KeyVals["message"])
-}
