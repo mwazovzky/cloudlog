@@ -98,7 +98,9 @@ func (l *logger) WithJob(job string) Logger {
 
 func WithFormatter(f formatter.Formatter) Option {
 	return func(l *logger) {
-		l.formatter = f
+		if f != nil {
+			l.formatter = f
+		}
 	}
 }
 
