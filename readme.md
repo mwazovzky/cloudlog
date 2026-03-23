@@ -72,8 +72,7 @@ logger := cloudlog.New(sender, cloudlog.WithJob("api-service"))
 
 logger.Info(ctx, "Request handled", "status", 200) // non-blocking
 
-// Before shutdown
-sender.Flush()
+// Before shutdown (Close flushes remaining entries)
 sender.Close()
 ```
 
