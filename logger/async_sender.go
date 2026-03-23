@@ -116,6 +116,10 @@ func (s *AsyncSender) Close() {
 		s.mu.Unlock()
 		return
 	}
+	// Flush before marking closed so Flush() actually drains via marker
+	s.mu.Unlock()
+	s.Flush()
+	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()
 
