@@ -1,0 +1,331 @@
+package logger
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+	stderrors "errors"
+
+	"github.com/mwazovzky/cloudlog/client"
+	"github.com/mwazovzky/cloudlog/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// asyncMockLogSender captures LokiEntry sends for testing
+type asyncMockLogSender struct {
+	mu      sync.Mutex
+	entries []client.LokiEntry
+	err     error
+}
+
+func (m *asyncMockLogSender) Send(_ context.Context, entry client.LokiEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	m.entries = append(m.entries, entry)
+	return nil
+}
+
+func (m *asyncMockLogSender) getEntries() []client.LokiEntry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]client.LokiEntry{}, m.entries...)
+}
+
+func (m *asyncMockLogSender) totalValues() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for _, e := range m.entries {
+		for _, s := range e.Streams {
+			count += len(s.Values)
+		}
+	}
+	return count
+}
+
+func TestAsyncSender_BasicSendAndFlush(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock, WithBatchSize(10))
+	defer sender.Close()
+
+	labels := map[string]string{"job": "test"}
+	err := sender.Send(ctx, []byte(`{"msg":"hello"}`), labels, time.Now())
+	assert.NoError(t, err)
+
+	sender.Flush()
+
+	assert.Equal(t, 1, mock.totalValues())
+}
+
+func TestAsyncSender_Batching(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock, WithBatchSize(5), WithFlushInterval(time.Hour))
+	defer sender.Close()
+
+	labels := map[string]string{"job": "test"}
+	for i := 0; i < 5; i++ {
+		err := sender.Send(ctx, []byte(fmt.Sprintf(`{"i":%d}`, i)), labels, time.Now())
+		assert.NoError(t, err)
+	}
+
+	sender.Flush()
+
+	entries := mock.getEntries()
+	require.Len(t, entries, 1)
+	assert.Len(t, entries[0].Streams[0].Values, 5)
+}
+
+func TestAsyncSender_FlushInterval(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock,
+		WithBatchSize(1000),
+		WithFlushInterval(50*time.Millisecond),
+	)
+	defer sender.Close()
+
+	labels := map[string]string{"job": "test"}
+	err := sender.Send(ctx, []byte(`{"msg":"tick"}`), labels, time.Now())
+	assert.NoError(t, err)
+
+	assert.Eventually(t, func() bool {
+		return mock.totalValues() == 1
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestAsyncSender_FlushDrainsAll(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock, WithBatchSize(1000))
+	defer sender.Close()
+
+	labels := map[string]string{"job": "test"}
+	for i := 0; i < 50; i++ {
+		err := sender.Send(ctx, []byte(fmt.Sprintf(`{"i":%d}`, i)), labels, time.Now())
+		assert.NoError(t, err)
+	}
+
+	sender.Flush()
+
+	assert.Equal(t, 50, mock.totalValues())
+}
+
+func TestAsyncSender_CloseFlushesAndStops(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock, WithBatchSize(1000))
+
+	labels := map[string]string{"job": "test"}
+	for i := 0; i < 10; i++ {
+		err := sender.Send(ctx, []byte(fmt.Sprintf(`{"i":%d}`, i)), labels, time.Now())
+		assert.NoError(t, err)
+	}
+
+	sender.Close()
+
+	assert.Equal(t, 10, mock.totalValues())
+}
+
+func TestAsyncSender_BufferFullNonBlocking(t *testing.T) {
+	// Use a LogSender that blocks forever so the worker can't drain the buffer
+	blockCh := make(chan struct{})
+	mock := &asyncMockLogSender{}
+	blockingSender := &blockingLogSender{ch: blockCh, delegate: mock}
+
+	sender := NewAsyncSender(blockingSender,
+		WithBufferSize(2),
+		WithBatchSize(1),
+	)
+	defer func() {
+		close(blockCh) // unblock the sender so Close() can finish
+		sender.Close()
+	}()
+
+	labels := map[string]string{"job": "test"}
+
+	// First send triggers the worker to call blockingSender.Send which blocks
+	// Second send fills the buffer (size=1 remaining since worker pulled one)
+	// Third send should get ErrBufferFull
+	var bufferFullErr error
+	for i := 0; i < 10; i++ {
+		err := sender.Send(ctx, []byte(`{"msg":"fill"}`), labels, time.Now())
+		if err != nil {
+			bufferFullErr = err
+			break
+		}
+		// Small delay to let worker pick up the first entry and block
+		time.Sleep(time.Millisecond)
+	}
+
+	require.Error(t, bufferFullErr)
+	assert.True(t, stderrors.Is(bufferFullErr, errors.ErrBufferFull))
+}
+
+// blockingLogSender blocks on Send until ch is closed, then delegates
+type blockingLogSender struct {
+	ch       chan struct{}
+	delegate client.LogSender
+}
+
+func (b *blockingLogSender) Send(ctx context.Context, entry client.LokiEntry) error {
+	<-b.ch
+	return b.delegate.Send(ctx, entry)
+}
+
+func TestAsyncSender_BufferFullBlocking(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock,
+		WithBufferSize(1),
+		WithBatchSize(1),
+		WithBlockOnFull(true),
+	)
+	defer sender.Close()
+
+	labels := map[string]string{"job": "test"}
+
+	// Should not block forever — worker drains the buffer
+	for i := 0; i < 10; i++ {
+		err := sender.Send(ctx, []byte(fmt.Sprintf(`{"i":%d}`, i)), labels, time.Now())
+		assert.NoError(t, err)
+	}
+
+	sender.Flush()
+	assert.Equal(t, 10, mock.totalValues())
+}
+
+func TestAsyncSender_ErrorHandler(t *testing.T) {
+	mock := &asyncMockLogSender{err: fmt.Errorf("loki down")}
+	var errorCount atomic.Int32
+	sender := NewAsyncSender(mock,
+		WithBatchSize(1),
+		WithErrorHandler(func(_ error) {
+			errorCount.Add(1)
+		}),
+	)
+	defer sender.Close()
+
+	labels := map[string]string{"job": "test"}
+	err := sender.Send(ctx, []byte(`{"msg":"fail"}`), labels, time.Now())
+	assert.NoError(t, err) // Send itself succeeds (buffered)
+
+	sender.Flush()
+
+	assert.GreaterOrEqual(t, errorCount.Load(), int32(1))
+}
+
+func TestAsyncSender_ConcurrentSend(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock,
+		WithBufferSize(1000),
+		WithBatchSize(50),
+		WithBlockOnFull(true),
+	)
+	defer sender.Close()
+
+	var wg sync.WaitGroup
+	labels := map[string]string{"job": "test"}
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				err := sender.Send(ctx, []byte(fmt.Sprintf(`{"g":%d,"i":%d}`, n, j)), labels, time.Now())
+				assert.NoError(t, err)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	sender.Flush()
+
+	assert.Equal(t, 1000, mock.totalValues())
+}
+
+func TestAsyncSender_GroupsByJob(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock, WithBatchSize(10))
+	defer sender.Close()
+
+	err := sender.Send(ctx, []byte(`{"msg":"a"}`), map[string]string{"job": "svc-a"}, time.Now())
+	assert.NoError(t, err)
+	err = sender.Send(ctx, []byte(`{"msg":"b"}`), map[string]string{"job": "svc-b"}, time.Now())
+	assert.NoError(t, err)
+
+	sender.Flush()
+
+	entries := mock.getEntries()
+	// May be 1 or 2 LokiEntry calls depending on batching, but total values = 2
+	assert.Equal(t, 2, mock.totalValues())
+
+	// Verify each stream has the correct job
+	for _, e := range entries {
+		for _, s := range e.Streams {
+			job := s.Stream["job"]
+			assert.Contains(t, []string{"svc-a", "svc-b"}, job)
+		}
+	}
+}
+
+func TestAsyncSender_GroupsByFullLabelSet(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock, WithBatchSize(10))
+	defer sender.Close()
+
+	// Same job, different user_id — should produce separate streams
+	err := sender.Send(ctx, []byte(`{"msg":"a"}`), map[string]string{"job": "svc", "user_id": "1"}, time.Now())
+	assert.NoError(t, err)
+	err = sender.Send(ctx, []byte(`{"msg":"b"}`), map[string]string{"job": "svc", "user_id": "2"}, time.Now())
+	assert.NoError(t, err)
+	// Same labels as first — should be grouped with it
+	err = sender.Send(ctx, []byte(`{"msg":"c"}`), map[string]string{"job": "svc", "user_id": "1"}, time.Now())
+	assert.NoError(t, err)
+
+	sender.Flush()
+
+	entries := mock.getEntries()
+	require.Len(t, entries, 1) // single HTTP request
+
+	// Should have 2 streams: user_id=1 (2 values) and user_id=2 (1 value)
+	streams := entries[0].Streams
+	assert.Len(t, streams, 2)
+
+	for _, s := range streams {
+		if s.Stream["user_id"] == "1" {
+			assert.Len(t, s.Values, 2)
+		} else {
+			assert.Len(t, s.Values, 1)
+		}
+	}
+}
+
+func TestAsyncSender_DoubleCloseIsSafe(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock)
+
+	sender.Close()
+	sender.Close() // should not panic
+}
+
+func TestAsyncSender_SendAfterClose(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock)
+	sender.Close()
+
+	err := sender.Send(ctx, []byte(`{"msg":"late"}`), map[string]string{"job": "test"}, time.Now())
+	assert.Error(t, err)
+	assert.True(t, stderrors.Is(err, errors.ErrSenderClosed))
+}
+
+func TestAsyncSender_FlushAfterClose(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock)
+	sender.Close()
+
+	// Should return immediately, not block forever
+	sender.Flush()
+}
