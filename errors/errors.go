@@ -21,6 +21,9 @@ var (
 
 	// ErrBufferFull indicates the async sender buffer is full
 	ErrBufferFull = errors.New("log buffer is full")
+
+	// ErrSenderClosed indicates the sender has been closed
+	ErrSenderClosed = errors.New("sender is closed")
 )
 
 // Error type check functions

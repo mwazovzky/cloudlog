@@ -319,7 +319,7 @@ func TestAsyncSender_SendAfterClose(t *testing.T) {
 
 	err := sender.Send(ctx, []byte(`{"msg":"late"}`), map[string]string{"job": "test"}, time.Now())
 	assert.Error(t, err)
-	assert.True(t, stderrors.Is(err, errors.ErrBufferFull))
+	assert.True(t, stderrors.Is(err, errors.ErrSenderClosed))
 }
 
 func TestAsyncSender_FlushAfterClose(t *testing.T) {
