@@ -35,6 +35,7 @@ type AsyncSender struct {
 	errorHandler  func(error)
 	closed        bool
 	mu            sync.Mutex
+	closeOnce     sync.Once
 }
 
 // AsyncSenderOption configures an AsyncSender.
@@ -110,22 +111,18 @@ func (s *AsyncSender) Flush() {
 }
 
 // Close flushes remaining entries and stops the background worker.
+// Safe for concurrent calls.
 func (s *AsyncSender) Close() {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return
-	}
-	// Flush before marking closed so Flush() actually drains via marker
-	s.mu.Unlock()
-	s.Flush()
-	s.mu.Lock()
-	s.closed = true
-	s.mu.Unlock()
+	s.closeOnce.Do(func() {
+		s.Flush()
 
-	s.Flush()
-	close(s.done)
-	s.wg.Wait()
+		s.mu.Lock()
+		s.closed = true
+		s.mu.Unlock()
+
+		close(s.done)
+		s.wg.Wait()
+	})
 }
 
 // worker is the background goroutine that pulls entries, batches them, and sends.
