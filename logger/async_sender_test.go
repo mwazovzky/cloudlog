@@ -95,10 +95,9 @@ func TestAsyncSender_FlushInterval(t *testing.T) {
 	err := sender.Send(ctx, []byte(`{"msg":"tick"}`), labels, time.Now())
 	assert.NoError(t, err)
 
-	// Wait for flush interval to fire
-	time.Sleep(150 * time.Millisecond)
-
-	assert.Equal(t, 1, mock.totalValues())
+	assert.Eventually(t, func() bool {
+		return mock.totalValues() == 1
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestAsyncSender_FlushDrainsAll(t *testing.T) {
