@@ -41,6 +41,6 @@ Logger.Info(ctx, msg, kv...)
 
 - **Constructors:** `New`, `NewSyncSender`, `NewAsyncSender`, `NewClient`, `NewLokiFormatter`
 - **Logger options:** `WithJob`, `WithMetadata`, `WithFormatter`, `WithLabelKeys`, `WithMinLevel`
-- **AsyncSender options:** `WithBufferSize`, `WithBatchSize`, `WithFlushInterval`, `WithBlockOnFull`, `WithErrorHandler`
+- **AsyncSender options:** `WithBufferSize`, `WithBatchSize`, `WithFlushInterval`, `WithBlockOnFull`, `WithErrorHandler`, `WithSendTimeout`
 - **Level constants:** `LevelDebug`, `LevelInfo`, `LevelWarn`, `LevelError`
 - **Error helpers:** `IsFormatError`, `IsConnectionError`, `IsResponseError`
