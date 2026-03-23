@@ -61,6 +61,13 @@ func NewAsyncSender(client client.LogSender, options ...AsyncSenderOption) *Asyn
 
 // Send buffers an entry for async delivery. Non-blocking by default.
 func (s *AsyncSender) Send(_ context.Context, content []byte, labels map[string]string, timestamp time.Time) error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return fmt.Errorf("%w: sender is closed", errors.ErrBufferFull)
+	}
+	s.mu.Unlock()
+
 	e := entry{
 		content:   content,
 		labels:    labels,
@@ -86,6 +93,13 @@ func (s *AsyncSender) Send(_ context.Context, content []byte, labels map[string]
 
 // Flush blocks until all buffered entries have been sent.
 func (s *AsyncSender) Flush() {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+
 	flushCh := make(chan struct{})
 	s.buffer <- entry{flushCh: flushCh}
 	<-flushCh

@@ -257,3 +257,22 @@ func TestAsyncSender_DoubleCloseIsSafe(t *testing.T) {
 	sender.Close()
 	sender.Close() // should not panic
 }
+
+func TestAsyncSender_SendAfterClose(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock)
+	sender.Close()
+
+	err := sender.Send(ctx, []byte(`{"msg":"late"}`), map[string]string{"job": "test"}, time.Now())
+	assert.Error(t, err)
+	assert.True(t, stderrors.Is(err, errors.ErrBufferFull))
+}
+
+func TestAsyncSender_FlushAfterClose(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock)
+	sender.Close()
+
+	// Should return immediately, not block forever
+	sender.Flush()
+}
