@@ -161,6 +161,8 @@ func (s *AsyncSender) worker() {
 				select {
 				case e := <-s.buffer:
 					if e.flushCh != nil {
+						s.sendBatch(batch)
+						batch = batch[:0]
 						close(e.flushCh)
 						continue
 					}
