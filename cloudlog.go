@@ -54,6 +54,7 @@ var (
 	WithFlushInterval = logger.WithFlushInterval
 	WithBlockOnFull   = logger.WithBlockOnFull
 	WithErrorHandler  = logger.WithErrorHandler
+	WithSendTimeout   = logger.WithSendTimeout
 )
 
 // NewClient creates a new Loki client with the given credentials

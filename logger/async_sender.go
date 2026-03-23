@@ -29,6 +29,7 @@ type AsyncSender struct {
 	batchSize     int
 	flushInterval time.Duration
 	blockOnFull   bool
+	sendTimeout   time.Duration
 	done          chan struct{}
 	wg            sync.WaitGroup
 	errorHandler  func(error)
@@ -47,6 +48,7 @@ func NewAsyncSender(client client.LogSender, options ...AsyncSenderOption) *Asyn
 		batchSize:     100,
 		flushInterval: 5 * time.Second,
 		blockOnFull:   false,
+		sendTimeout:   30 * time.Second,
 		done:          make(chan struct{}),
 		errorHandler:  func(err error) { log.Printf("cloudlog: send error: %v", err) },
 	}
@@ -228,7 +230,10 @@ func (s *AsyncSender) sendBatch(batch []entry) {
 		})
 	}
 
-	if err := s.client.Send(context.Background(), lokiEntry); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), s.sendTimeout)
+	defer cancel()
+
+	if err := s.client.Send(ctx, lokiEntry); err != nil {
 		s.errorHandler(err)
 	}
 }
@@ -269,6 +274,14 @@ func WithErrorHandler(handler func(error)) AsyncSenderOption {
 	return func(s *AsyncSender) {
 		if handler != nil {
 			s.errorHandler = handler
+		}
+	}
+}
+
+func WithSendTimeout(d time.Duration) AsyncSenderOption {
+	return func(s *AsyncSender) {
+		if d > 0 {
+			s.sendTimeout = d
 		}
 	}
 }
