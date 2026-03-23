@@ -172,7 +172,8 @@ Send(ctx, content, labels, timestamp)
   → push entry to buffer channel (non-blocking)
   → background worker:
       → accumulate entries until batchSize or flushInterval
-      → group by job label → build LokiEntry per job
+      → group entries by full label set (including any keys added via WithLabelKeys)
+      → build a single batched LokiEntry with one stream per distinct label set
       → LogSender.Send(context.Background(), batchedEntry)
       → on error: call errorHandler
 ```
