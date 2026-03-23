@@ -72,7 +72,7 @@ func (s *AsyncSender) Send(_ context.Context, content []byte, labels map[string]
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		return fmt.Errorf("%w", errors.ErrSenderClosed)
+		return errors.ErrSenderClosed
 	}
 	s.mu.Unlock()
 
@@ -87,7 +87,7 @@ func (s *AsyncSender) Send(_ context.Context, content []byte, labels map[string]
 		case s.buffer <- e:
 			return nil
 		case <-s.done:
-			return fmt.Errorf("%w", errors.ErrSenderClosed)
+			return errors.ErrSenderClosed
 		}
 	}
 
@@ -95,7 +95,7 @@ func (s *AsyncSender) Send(_ context.Context, content []byte, labels map[string]
 	case s.buffer <- e:
 		return nil
 	default:
-		return fmt.Errorf("%w", errors.ErrBufferFull)
+		return errors.ErrBufferFull
 	}
 }
 
