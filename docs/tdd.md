@@ -189,6 +189,7 @@ Both methods live on `AsyncSender`, not on `Logger`.
 ### Error Handling
 
 - `Send()` returns `ErrBufferFull` if the buffer channel is full (non-blocking mode)
+- `Send()` returns `ErrSenderClosed` if called after `Close()` has been invoked
 - Background HTTP errors are passed to `errorHandler` callback (default: log to stderr)
 
 ### AsyncSender Options
