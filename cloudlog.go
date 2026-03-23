@@ -43,7 +43,7 @@ func NewSyncSender(c client.LogSender) *logger.SyncSender {
 }
 
 // NewAsyncSender creates a buffered sender that delivers log entries asynchronously
-func NewAsyncSender(c client.LogSender, options ...logger.AsyncSenderOption) *logger.AsyncSender {
+func NewAsyncSender(c client.LogSender, options ...AsyncSenderOption) *logger.AsyncSender {
 	return logger.NewAsyncSender(c, options...)
 }
 
