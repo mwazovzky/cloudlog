@@ -133,28 +133,49 @@ func TestAsyncSender_CloseFlushesAndStops(t *testing.T) {
 }
 
 func TestAsyncSender_BufferFullNonBlocking(t *testing.T) {
+	// Use a LogSender that blocks forever so the worker can't drain the buffer
+	blockCh := make(chan struct{})
 	mock := &asyncMockLogSender{}
-	sender := NewAsyncSender(mock,
+	blockingSender := &blockingLogSender{ch: blockCh, delegate: mock}
+
+	sender := NewAsyncSender(blockingSender,
 		WithBufferSize(2),
-		WithBatchSize(1000),
-		WithFlushInterval(time.Hour),
+		WithBatchSize(1),
 	)
-	defer sender.Close()
+	defer func() {
+		close(blockCh) // unblock the sender so Close() can finish
+		sender.Close()
+	}()
 
 	labels := map[string]string{"job": "test"}
 
-	// Fill the buffer (2 entries) plus one that may or may not fit depending on worker timing
+	// First send triggers the worker to call blockingSender.Send which blocks
+	// Second send fills the buffer (size=1 remaining since worker pulled one)
+	// Third send should get ErrBufferFull
 	var bufferFullErr error
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
 		err := sender.Send(ctx, []byte(`{"msg":"fill"}`), labels, time.Now())
 		if err != nil {
 			bufferFullErr = err
 			break
 		}
+		// Small delay to let worker pick up the first entry and block
+		time.Sleep(time.Millisecond)
 	}
 
 	require.Error(t, bufferFullErr)
 	assert.True(t, stderrors.Is(bufferFullErr, errors.ErrBufferFull))
+}
+
+// blockingLogSender blocks on Send until ch is closed, then delegates
+type blockingLogSender struct {
+	ch       chan struct{}
+	delegate client.LogSender
+}
+
+func (b *blockingLogSender) Send(ctx context.Context, entry client.LokiEntry) error {
+	<-b.ch
+	return b.delegate.Send(ctx, entry)
 }
 
 func TestAsyncSender_BufferFullBlocking(t *testing.T) {
