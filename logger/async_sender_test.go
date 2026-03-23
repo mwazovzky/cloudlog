@@ -7,13 +7,12 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	stderrors "errors"
 
 	"github.com/mwazovzky/cloudlog/client"
 	"github.com/mwazovzky/cloudlog/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	stderrors "errors"
 )
 
 // asyncMockLogSender captures LokiEntry sends for testing
