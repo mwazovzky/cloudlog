@@ -141,6 +141,7 @@ if err != nil {
 | `WithFlushInterval(d)`   | 5s      | Max time between sends            |
 | `WithBlockOnFull(bool)`  | false   | Block vs return ErrBufferFull     |
 | `WithErrorHandler(fn)`   | stderr  | Callback for background errors    |
+| `WithSendTimeout(d)`     | 30s     | Timeout per HTTP batch send       |
 
 ### Formatter Options
 

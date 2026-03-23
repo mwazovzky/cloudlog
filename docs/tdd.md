@@ -174,7 +174,7 @@ Send(ctx, content, labels, timestamp)
       → accumulate entries until batchSize or flushInterval
       → group entries by full label set (including any keys added via WithLabelKeys)
       → build a single batched LokiEntry with one stream per distinct label set
-      → LogSender.Send(context.Background(), batchedEntry)
+      → LogSender.Send(ctx with sendTimeout, batchedEntry)
       → on error: call errorHandler
 ```
 
@@ -182,7 +182,7 @@ Send(ctx, content, labels, timestamp)
 
 `Flush()` pushes a flush marker (entry with a response channel) into the buffer. When the worker encounters it, it sends the current partial batch, then closes the response channel. `Flush()` blocks until the response channel is closed.
 
-`Close()` calls `Flush()` to drain remaining entries, then signals the worker to stop.
+`Close()` calls `Flush()` to drain remaining entries, then signals the worker to stop. Both `Flush()` and `Close()` return immediately if the sender is already closed.
 
 Both methods live on `AsyncSender`, not on `Logger`.
 
@@ -200,3 +200,4 @@ Both methods live on `AsyncSender`, not on `Logger`.
 | `WithFlushInterval` | 5s      | Max time between sends            |
 | `WithBlockOnFull`   | false   | Block vs return ErrBufferFull     |
 | `WithErrorHandler`  | stderr  | Callback for background errors    |
+| `WithSendTimeout`   | 30s     | Timeout per HTTP batch send       |
