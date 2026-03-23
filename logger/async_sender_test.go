@@ -223,6 +223,7 @@ func TestAsyncSender_ConcurrentSend(t *testing.T) {
 	sender := NewAsyncSender(mock,
 		WithBufferSize(1000),
 		WithBatchSize(50),
+		WithBlockOnFull(true),
 	)
 	defer sender.Close()
 
@@ -234,7 +235,8 @@ func TestAsyncSender_ConcurrentSend(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
-				_ = sender.Send(ctx, []byte(fmt.Sprintf(`{"g":%d,"i":%d}`, n, j)), labels, time.Now())
+				err := sender.Send(ctx, []byte(fmt.Sprintf(`{"g":%d,"i":%d}`, n, j)), labels, time.Now())
+				assert.NoError(t, err)
 			}
 		}(i)
 	}
