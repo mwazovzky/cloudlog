@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -171,47 +173,63 @@ func (s *AsyncSender) worker() {
 	}
 }
 
-// sendBatch groups entries by job label and sends one LokiEntry per job.
+// labelKey returns a string key for grouping entries by their full label set.
+func labelKey(labels map[string]string) string {
+	// Build a deterministic key from sorted label pairs
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for i, k := range keys {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(labels[k])
+	}
+	return b.String()
+}
+
+// sendBatch groups entries by their full label set and sends one LokiEntry per group.
 func (s *AsyncSender) sendBatch(batch []entry) {
 	if len(batch) == 0 {
 		return
 	}
 
-	// Group entries by job label
-	byJob := make(map[string][]entry)
-	for _, e := range batch {
-		job := e.labels["job"]
-		byJob[job] = append(byJob[job], e)
+	type streamGroup struct {
+		labels map[string]string
+		values [][]string
 	}
 
-	for job, entries := range byJob {
-		values := make([][]string, 0, len(entries))
-		for _, e := range entries {
-			values = append(values, []string{
-				fmt.Sprintf("%d", e.timestamp.UnixNano()),
-				string(e.content),
-			})
+	groups := make(map[string]*streamGroup)
+	for _, e := range batch {
+		key := labelKey(e.labels)
+		g, ok := groups[key]
+		if !ok {
+			g = &streamGroup{labels: e.labels}
+			groups[key] = g
 		}
+		g.values = append(g.values, []string{
+			fmt.Sprintf("%d", e.timestamp.UnixNano()),
+			string(e.content),
+		})
+	}
 
-		// Use labels from first entry, ensure job is set
-		labels := make(map[string]string)
-		for k, v := range entries[0].labels {
-			labels[k] = v
-		}
-		labels["job"] = job
+	lokiEntry := client.LokiEntry{
+		Streams: make([]client.LokiStream, 0, len(groups)),
+	}
+	for _, g := range groups {
+		lokiEntry.Streams = append(lokiEntry.Streams, client.LokiStream{
+			Stream: g.labels,
+			Values: g.values,
+		})
+	}
 
-		lokiEntry := client.LokiEntry{
-			Streams: []client.LokiStream{
-				{
-					Stream: labels,
-					Values: values,
-				},
-			},
-		}
-
-		if err := s.client.Send(context.Background(), lokiEntry); err != nil {
-			s.errorHandler(err)
-		}
+	if err := s.client.Send(context.Background(), lokiEntry); err != nil {
+		s.errorHandler(err)
 	}
 }
 

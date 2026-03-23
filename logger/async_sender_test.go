@@ -250,6 +250,38 @@ func TestAsyncSender_GroupsByJob(t *testing.T) {
 	}
 }
 
+func TestAsyncSender_GroupsByFullLabelSet(t *testing.T) {
+	mock := &asyncMockLogSender{}
+	sender := NewAsyncSender(mock, WithBatchSize(10))
+	defer sender.Close()
+
+	// Same job, different user_id — should produce separate streams
+	err := sender.Send(ctx, []byte(`{"msg":"a"}`), map[string]string{"job": "svc", "user_id": "1"}, time.Now())
+	assert.NoError(t, err)
+	err = sender.Send(ctx, []byte(`{"msg":"b"}`), map[string]string{"job": "svc", "user_id": "2"}, time.Now())
+	assert.NoError(t, err)
+	// Same labels as first — should be grouped with it
+	err = sender.Send(ctx, []byte(`{"msg":"c"}`), map[string]string{"job": "svc", "user_id": "1"}, time.Now())
+	assert.NoError(t, err)
+
+	sender.Flush()
+
+	entries := mock.getEntries()
+	require.Len(t, entries, 1) // single HTTP request
+
+	// Should have 2 streams: user_id=1 (2 values) and user_id=2 (1 value)
+	streams := entries[0].Streams
+	assert.Len(t, streams, 2)
+
+	for _, s := range streams {
+		if s.Stream["user_id"] == "1" {
+			assert.Len(t, s.Values, 2)
+		} else {
+			assert.Len(t, s.Values, 1)
+		}
+	}
+}
+
 func TestAsyncSender_DoubleCloseIsSafe(t *testing.T) {
 	mock := &asyncMockLogSender{}
 	sender := NewAsyncSender(mock)
