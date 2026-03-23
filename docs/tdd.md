@@ -169,7 +169,7 @@ LevelError = 3  // errors only
 
 ```
 Send(ctx, content, labels, timestamp)
-  → push entry to buffer channel (non-blocking)
+  → push entry to buffer channel (non-blocking by default, blocks if WithBlockOnFull)
   → background worker:
       → accumulate entries until batchSize or flushInterval
       → group entries by full label set (including any keys added via WithLabelKeys)
