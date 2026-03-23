@@ -65,6 +65,9 @@ func NewAsyncSender(client client.LogSender, options ...AsyncSenderOption) *Asyn
 }
 
 // Send buffers an entry for async delivery. Non-blocking by default.
+// The caller's context is intentionally not propagated to the HTTP send —
+// entries are sent later by a background worker, and the original context
+// may already be cancelled. Use WithSendTimeout to bound HTTP send duration.
 func (s *AsyncSender) Send(_ context.Context, content []byte, labels map[string]string, timestamp time.Time) error {
 	s.mu.Lock()
 	if s.closed {
