@@ -106,8 +106,16 @@ func (s *AsyncSender) Flush() {
 	s.mu.Unlock()
 
 	flushCh := make(chan struct{})
-	s.buffer <- entry{flushCh: flushCh}
-	<-flushCh
+	select {
+	case s.buffer <- entry{flushCh: flushCh}:
+	case <-s.done:
+		return
+	}
+
+	select {
+	case <-flushCh:
+	case <-s.done:
+	}
 }
 
 // Close flushes remaining entries and stops the background worker.
