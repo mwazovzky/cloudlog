@@ -18,6 +18,9 @@ var (
 
 	// ErrInvalidInput indicates invalid input parameters
 	ErrInvalidInput = errors.New("invalid input parameters")
+
+	// ErrBufferFull indicates the async sender buffer is full
+	ErrBufferFull = errors.New("log buffer is full")
 )
 
 // Error type check functions

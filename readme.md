@@ -57,6 +57,26 @@ func main() {
 }
 ```
 
+## Async Logging
+
+For high-throughput scenarios, use `AsyncSender` to buffer and batch log entries:
+
+```go
+client := cloudlog.NewClient(url, user, token, httpClient)
+sender := cloudlog.NewAsyncSender(client,
+	cloudlog.WithBufferSize(10000),
+	cloudlog.WithBatchSize(100),
+	cloudlog.WithFlushInterval(time.Second),
+)
+logger := cloudlog.New(sender, cloudlog.WithJob("api-service"))
+
+logger.Info(ctx, "Request handled", "status", 200) // non-blocking
+
+// Before shutdown
+sender.Flush()
+sender.Close()
+```
+
 ## Metadata
 
 ```go
@@ -111,6 +131,16 @@ if err != nil {
 | `WithFormatter(formatter)` | Sets a custom formatter                  |
 | `WithLabelKeys(keys...)`   | Promotes keys to Loki stream labels      |
 | `WithMinLevel(level)`      | Sets minimum log level                   |
+
+### AsyncSender Options
+
+| Option                   | Default | Description                       |
+| ------------------------ | ------- | --------------------------------- |
+| `WithBufferSize(n)`      | 1000    | Buffer channel capacity           |
+| `WithBatchSize(n)`       | 100     | Max entries per HTTP request      |
+| `WithFlushInterval(d)`   | 5s      | Max time between sends            |
+| `WithBlockOnFull(bool)`  | false   | Block vs return ErrBufferFull     |
+| `WithErrorHandler(fn)`   | stderr  | Callback for background errors    |
 
 ### Formatter Options
 

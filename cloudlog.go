@@ -25,10 +25,11 @@ const (
 
 // Type re-exports
 type (
-	Logger     = logger.Logger
-	Sender     = logger.Sender
-	HTTPClient = client.HTTPClient
-	Option     = logger.Option
+	Logger            = logger.Logger
+	Sender            = logger.Sender
+	HTTPClient        = client.HTTPClient
+	Option            = logger.Option
+	AsyncSenderOption = logger.AsyncSenderOption
 )
 
 // New creates a new Logger with the given sender and options
@@ -40,6 +41,20 @@ func New(sender logger.Sender, options ...logger.Option) logger.Logger {
 func NewSyncSender(c client.LogSender) *logger.SyncSender {
 	return logger.NewSyncSender(c)
 }
+
+// NewAsyncSender creates a buffered sender that delivers log entries asynchronously
+func NewAsyncSender(c client.LogSender, options ...logger.AsyncSenderOption) *logger.AsyncSender {
+	return logger.NewAsyncSender(c, options...)
+}
+
+// Async sender options
+var (
+	WithBufferSize    = logger.WithBufferSize
+	WithBatchSize     = logger.WithBatchSize
+	WithFlushInterval = logger.WithFlushInterval
+	WithBlockOnFull   = logger.WithBlockOnFull
+	WithErrorHandler  = logger.WithErrorHandler
+)
 
 // NewClient creates a new Loki client with the given credentials
 func NewClient(url, username, token string, httpClient client.HTTPClient) client.LogSender {

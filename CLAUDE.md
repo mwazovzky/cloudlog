@@ -10,8 +10,9 @@ CloudLog is a Go structured logging library for Grafana Loki integration. Module
 
 ```bash
 go test ./...                              # Run all tests
-go test ./logger/                          # Run tests for a specific package
+go test -race ./...                        # Run with race detector
 go test -run TestFunctionName ./package/   # Run a single test
+golangci-lint run ./...                    # Run linter
 ./coverage.sh                              # Race detection + coverage
 ```
 
@@ -21,7 +22,7 @@ The root package (`cloudlog.go`) is a **facade** re-exporting from internal pack
 
 ### Core packages
 
-- **`logger/`** — `Logger` and `Sender` interfaces, `SyncSender`, and logger implementation. Log methods accept `context.Context`.
+- **`logger/`** — `Logger` and `Sender` interfaces, `SyncSender`, `AsyncSender`, and logger implementation. Log methods accept `context.Context`.
 - **`formatter/`** — `Formatter` interface returns `[]byte`. `LokiFormatter` (JSON) and `StringFormatter` (human-readable).
 - **`client/`** — `LogSender` interface and `LokiClient`. Sends `LokiEntry` to Loki's HTTP push API.
 - **`errors/`** — Sentinel errors with `Is*` helpers.
@@ -32,19 +33,14 @@ The root package (`cloudlog.go`) is a **facade** re-exporting from internal pack
 Logger.Info(ctx, msg, kv...)
   → formatter.Format(LogEntry) → []byte
   → Sender.Send(ctx, content, labels, timestamp)
-  → [SyncSender] builds LokiEntry → LogSender.Send(ctx, LokiEntry) → HTTP POST
+  → SyncSender: builds LokiEntry → HTTP POST (blocking)
+  → AsyncSender: pushes to buffer → worker batches → HTTP POST (background)
 ```
-
-### Key interfaces
-
-- **`Logger`** — Info/Error/Debug/Warn + With/WithJob
-- **`Sender`** — Send(ctx, content, labels, timestamp). SyncSender sends immediately. AsyncSender (future) will buffer.
-- **`Formatter`** — Format(LogEntry) → []byte
-- **`LogSender`** — Send(ctx, LokiEntry). Low-level HTTP transport.
 
 ### Public API
 
-- **Constructors:** `New`, `NewSyncSender`, `NewClient`, `NewLokiFormatter`
+- **Constructors:** `New`, `NewSyncSender`, `NewAsyncSender`, `NewClient`, `NewLokiFormatter`
 - **Logger options:** `WithJob`, `WithMetadata`, `WithFormatter`, `WithLabelKeys`, `WithMinLevel`
+- **AsyncSender options:** `WithBufferSize`, `WithBatchSize`, `WithFlushInterval`, `WithBlockOnFull`, `WithErrorHandler`
 - **Level constants:** `LevelDebug`, `LevelInfo`, `LevelWarn`, `LevelError`
 - **Error helpers:** `IsFormatError`, `IsConnectionError`, `IsResponseError`

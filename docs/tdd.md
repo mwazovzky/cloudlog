@@ -137,6 +137,7 @@ logger/
   interfaces.go          — Logger, Sender interfaces
   logger.go              — logger implementation, options
   sender.go              — SyncSender
+  async_sender.go        — AsyncSender
 ```
 
 ## Configuration
@@ -160,20 +161,41 @@ LevelWarn  = 2
 LevelError = 3  // errors only
 ```
 
-## Future: AsyncSender
+## AsyncSender
 
-The `Sender` interface is designed to support async delivery:
+`AsyncSender` implements `Sender` with non-blocking, buffered delivery. A background worker batches entries and sends them to the underlying `LogSender`.
 
-```go
-type AsyncSender struct {
-    client LogSender
-    buffer chan senderEntry
-    // ... worker pool, batch config
-}
+### Data Flow
+
+```
+Send(ctx, content, labels, timestamp)
+  → push entry to buffer channel (non-blocking)
+  → background worker:
+      → accumulate entries until batchSize or flushInterval
+      → group by job label → build LokiEntry per job
+      → LogSender.Send(context.Background(), batchedEntry)
+      → on error: call errorHandler
 ```
 
-- `Send()` pushes to buffer (non-blocking)
-- Background workers batch entries and call `LogSender.Send()`
-- `Flush()` and `Close()` live on `AsyncSender`, not on `Logger`
-- Error handler callback for background send failures
-- Buffer-full behavior configurable (block or return error)
+### Flush and Close
+
+`Flush()` pushes a flush marker (entry with a response channel) into the buffer. When the worker encounters it, it sends the current partial batch, then closes the response channel. `Flush()` blocks until the response channel is closed.
+
+`Close()` calls `Flush()` to drain remaining entries, then signals the worker to stop.
+
+Both methods live on `AsyncSender`, not on `Logger`.
+
+### Error Handling
+
+- `Send()` returns `ErrBufferFull` if the buffer channel is full (non-blocking mode)
+- Background HTTP errors are passed to `errorHandler` callback (default: log to stderr)
+
+### AsyncSender Options
+
+| Option              | Default | Description                       |
+| ------------------- | ------- | --------------------------------- |
+| `WithBufferSize`    | 1000    | Buffer channel capacity           |
+| `WithBatchSize`     | 100     | Max entries per HTTP request      |
+| `WithFlushInterval` | 5s      | Max time between sends            |
+| `WithBlockOnFull`   | false   | Block vs return ErrBufferFull     |
+| `WithErrorHandler`  | stderr  | Callback for background errors    |
