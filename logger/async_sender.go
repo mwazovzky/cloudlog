@@ -191,9 +191,7 @@ func labelKey(labels map[string]string) string {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.WriteString(k)
-		b.WriteByte('=')
-		b.WriteString(labels[k])
+		fmt.Fprintf(&b, "%q=%q", k, labels[k])
 	}
 	return b.String()
 }
